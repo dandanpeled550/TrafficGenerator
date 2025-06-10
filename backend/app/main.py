@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import traffic, sessions, profiles, logs
+from app.api import traffic, sessions
 import os
 from dotenv import load_dotenv
 
@@ -28,8 +28,6 @@ app.add_middleware(
 # Include routers
 app.include_router(traffic.router, prefix="/api/traffic", tags=["traffic"])
 app.include_router(sessions.router, prefix="/api/sessions", tags=["sessions"])
-app.include_router(profiles.router, prefix="/api/profiles", tags=["profiles"])
-app.include_router(logs.router, prefix="/api/logs", tags=["logs"])
 
 @app.get("/")
 async def root():
