@@ -40,9 +40,39 @@ https://<your-backend-domain>/api
 
 ---
 
+### 2. Get All Generated Traffic
+
+**GET** `/api/traffic/generated`
+
+- **Description:** Retrieve all generated traffic data across all campaigns.
+- **Response:**
+  ```json
+  [
+    { /* traffic data object */ },
+    ...
+  ]
+  ```
+
+---
+
+### 3. Get Generated Traffic for a Specific Campaign
+
+**GET** `/api/traffic/generated/{campaign_id}`
+
+- **Description:** Retrieve all generated traffic data for a specific campaign.
+- **Response:**
+  ```json
+  [
+    { /* traffic data object for the campaign */ },
+    ...
+  ]
+  ```
+
+---
+
 ## Session Endpoints
 
-### 2. Create a Session
+### 4. Create a Session
 
 **POST** `/api/sessions/`
 
@@ -54,7 +84,7 @@ https://<your-backend-domain>/api
 
 ---
 
-### 3. List All Sessions
+### 5. List All Sessions
 
 **GET** `/api/sessions/`
 
@@ -64,7 +94,7 @@ https://<your-backend-domain>/api
 
 ---
 
-### 4. Get a Specific Session
+### 6. Get a Specific Session
 
 **GET** `/api/sessions/{session_id}`
 
@@ -74,7 +104,7 @@ https://<your-backend-domain>/api
 
 ---
 
-### 5. Update a Session
+### 7. Update a Session
 
 **PUT** `/api/sessions/{session_id}`
 
@@ -86,7 +116,7 @@ https://<your-backend-domain>/api
 
 ---
 
-### 6. Delete a Session
+### 8. Delete a Session
 
 **DELETE** `/api/sessions/{session_id}`
 
@@ -106,7 +136,9 @@ https://<your-backend-domain>/api
 
 ---
 
-## Notes
+## Data Storage Notes
 
-- There are currently **no endpoints to directly fetch logs or generated traffic data**. Traffic is generated in the background, and logs are only printed to the server console.
-- If you want to store and retrieve logs or generated traffic, you'll need to implement additional endpoints and storage. 
+- **Per-campaign traffic:** Each campaign's generated traffic is saved in a separate file: `backend/app/api/traffic_data/{campaign_id}.json`
+- **All traffic:** All generated traffic is also saved in a global file: `backend/app/api/traffic_data/all_traffic.json`
+- **Retrieval:** Use the endpoints above to fetch traffic data on demand.
+- If you want to store and retrieve logs or other data, you'll need to implement additional endpoints and storage. 

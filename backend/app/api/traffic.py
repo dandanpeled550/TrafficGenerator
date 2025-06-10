@@ -1,3 +1,5 @@
+import os
+import json
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -7,6 +9,28 @@ import time
 from datetime import datetime
 
 router = APIRouter()
+
+TRAFFIC_DATA_DIR = os.path.join(os.path.dirname(__file__), 'traffic_data')
+os.makedirs(TRAFFIC_DATA_DIR, exist_ok=True)
+ALL_TRAFFIC_FILE = os.path.join(TRAFFIC_DATA_DIR, 'all_traffic.json')
+
+def append_traffic_to_file(campaign_id: str, traffic_data: Dict[str, Any]):
+    # Per-campaign file
+    campaign_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}.json')
+    for file in [campaign_file, ALL_TRAFFIC_FILE]:
+        if os.path.exists(file):
+            with open(file, 'r+') as f:
+                try:
+                    data = json.load(f)
+                except Exception:
+                    data = []
+                data.append(traffic_data)
+                f.seek(0)
+                json.dump(data, f)
+                f.truncate()
+        else:
+            with open(file, 'w') as f:
+                json.dump([traffic_data], f)
 
 class TrafficConfig(BaseModel):
     campaign_id: str
@@ -64,6 +88,8 @@ async def generate_traffic_background(config: TrafficConfig):
                 # Simulate request
                 await simulate_request(traffic_data)
                 
+                append_traffic_to_file(config.campaign_id, traffic_data)
+                
                 request_count += 1
                 
             except Exception as e:
@@ -110,3 +136,18 @@ async def simulate_request(traffic_data: Dict[str, Any]):
     # For now, we'll just simulate it with a small delay
     await asyncio.sleep(random.uniform(0.1, 0.5))
     return True 
+
+@router.get("/generated")
+def get_all_generated_traffic():
+    if not os.path.exists(ALL_TRAFFIC_FILE):
+        return []
+    with open(ALL_TRAFFIC_FILE, 'r') as f:
+        return json.load(f)
+
+@router.get("/generated/{campaign_id}")
+def get_campaign_generated_traffic(campaign_id: str):
+    campaign_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}.json')
+    if not os.path.exists(campaign_file):
+        return []
+    with open(campaign_file, 'r') as f:
+        return json.load(f) 
