@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { TrafficSession } from "@/api/entities";
+import backendClient from "@/api/backendClient";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
@@ -30,8 +30,13 @@ export default function Dashboard() {
 
   const loadSessions = async () => {
     setIsLoading(true);
-    const data = await TrafficSession.list("-created_date", 10);
-    setSessions(data);
+    try {
+      const data = await backendClient.sessions.list();
+      setSessions(data);
+    } catch (error) {
+      console.error("Failed to load sessions:", error);
+      setSessions([]);
+    }
     setIsLoading(false);
   };
 
@@ -65,13 +70,16 @@ export default function Dashboard() {
         break;
     }
 
-    await TrafficSession.update(sessionId, { 
-      status: newStatus,
-      ...(action === 'start' && { start_time: new Date().toISOString() }),
-      ...(action === 'stop' && { end_time: new Date().toISOString() })
-    });
-    
-    loadSessions();
+    try {
+      await backendClient.sessions.update(sessionId, { 
+        status: newStatus,
+        ...(action === 'start' && { start_time: new Date().toISOString() }),
+        ...(action === 'stop' && { end_time: new Date().toISOString() })
+      });
+      loadSessions();
+    } catch (error) {
+      console.error(`Failed to ${action} session:`, error);
+    }
   };
 
   const activeSessions = sessions.filter(s => ['running', 'paused'].includes(s.status));

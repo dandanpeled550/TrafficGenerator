@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { TrafficSession } from "@/api/entities";
-import { UserProfile } from "@/api/entities";
+import backendClient from "@/api/backendClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -111,7 +110,7 @@ export default function Generator() {
 
   const fetchUserProfiles = async () => {
     try {
-      const profiles = await UserProfile.list();
+      const profiles = await backendClient.profiles.list();
       setAllUserProfiles(profiles);
     } catch (error) {
       console.error("Failed to load user profiles:", error);
@@ -120,7 +119,7 @@ export default function Generator() {
 
   const loadCampaignForEditing = async (campaignId) => {
     try {
-      const campaigns = await TrafficSession.list();
+      const campaigns = await backendClient.sessions.list();
       const campaign = campaigns.find(c => c.id === campaignId);
 
       if (campaign) {
@@ -194,9 +193,9 @@ export default function Generator() {
       };
 
       if (isEditing && editingCampaignId) {
-        await TrafficSession.update(editingCampaignId, sessionData);
+        await backendClient.sessions.update(editingCampaignId, sessionData);
       } else {
-        await TrafficSession.create(sessionData);
+        await backendClient.sessions.create(sessionData);
       }
 
       navigate(createPageUrl("Campaigns"));

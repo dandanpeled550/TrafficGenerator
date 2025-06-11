@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from "react";
 import backendClient from "@/api/backendClient";
-import { TrafficSession } from "@/api/entities";
-import { UserProfile } from "@/api/entities";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -52,7 +50,6 @@ import {
 export default function CampaignsPage() {
   const navigate = useNavigate();
   const [campaigns, setCampaigns] = useState([]);
-  const [userProfiles, setUserProfiles] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -87,7 +84,6 @@ export default function CampaignsPage() {
     try {
       const campaignsData = await backendClient.sessions.list();
       setCampaigns(campaignsData);
-
     } catch (error) {
       console.error("Failed to load data:", error);
     }
@@ -171,14 +167,6 @@ export default function CampaignsPage() {
       default:
         return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
     }
-  };
-
-  const getProfileNames = (profileIds) => {
-    if (!profileIds || profileIds.length === 0) return "No profiles";
-    return profileIds
-      .map(id => userProfiles.find(p => p.id === id)?.profile_name)
-      .filter(Boolean)
-      .join(", ");
   };
 
   const filteredCampaigns = campaigns.filter(campaign => {

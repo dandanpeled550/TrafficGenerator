@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from "react";
+import backendClient from "@/api/backendClient";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { AlertCircle, Play, Square, Loader2, Zap } from "lucide-react";
+import { AlertCircle, Play, Square, Loader2, Zap, Pause, RefreshCw, Download } from "lucide-react";
 import { motion } from "framer-motion";
-import { UserProfile } from "@/api/entities";
-import { TrafficSession } from "@/api/entities";
+import { Progress } from "@/components/ui/progress";
 
 export default function TrafficControlPanel({ campaign, onStatusChange }) {
   const [isStarting, setIsStarting] = useState(false);
@@ -49,7 +49,7 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
       // Get user profiles for this campaign
       const userProfiles = [];
       if (campaign.user_profile_ids && campaign.user_profile_ids.length > 0) {
-        const allProfiles = await UserProfile.list();
+        const allProfiles = await backendClient.profiles.list();
         campaign.user_profile_ids.forEach(profileId => {
           const profile = allProfiles.find(p => p.id === profileId);
           if (profile) userProfiles.push(profile);
@@ -64,7 +64,7 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
       
       if (result.success) {
         // Update campaign with log file path and start time
-        await TrafficSession.update(campaign.id, {
+        await backendClient.sessions.update(campaign.id, {
           status: 'running',
           start_time: new Date().toISOString(),
           log_file_path: trafficConfig.log_file_path,
@@ -89,7 +89,7 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
   const handleStopCampaign = async () => {
     setIsStopping(true);
     try {
-      await TrafficSession.update(campaign.id, {
+      await backendClient.sessions.update(campaign.id, {
         status: 'stopped',
         end_time: new Date().toISOString()
       });
@@ -138,7 +138,7 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
           Math.min(100, (requestCount / (config.requests_per_minute * 10)) * 100); // Show progress for indefinite campaigns
         
         // Update campaign statistics
-        await TrafficSession.update(campaignId, {
+        await backendClient.sessions.update(campaignId, {
           total_requests: requestCount,
           successful_requests: successfulRequests,
           progress_percentage: Math.round(progressPercentage),
@@ -146,7 +146,7 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
         });
         
         // Check if campaign should continue
-        const campaigns = await TrafficSession.list();
+        const campaigns = await backendClient.sessions.list();
         const currentCampaign = campaigns.find(c => c.id === campaignId);
         
         if (!currentCampaign || currentCampaign.status !== 'running') {
@@ -155,7 +155,7 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
         
         // Check if campaign is complete
         if (config.duration_minutes && elapsed >= durationMs) {
-          await TrafficSession.update(campaignId, {
+          await backendClient.sessions.update(campaignId, {
             status: 'completed',
             end_time: new Date().toISOString(),
             progress_percentage: 100
