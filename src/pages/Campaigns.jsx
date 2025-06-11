@@ -1,5 +1,5 @@
-
 import React, { useState, useEffect } from "react";
+import backendClient from "@/api/backendClient";
 import { TrafficSession } from "@/api/entities";
 import { UserProfile } from "@/api/entities";
 import { Button } from "@/components/ui/button";
@@ -85,12 +85,9 @@ export default function CampaignsPage() {
   const loadData = async (isRefresh = false) => {
     if (!isRefresh) setIsLoading(true);
     try {
-      const [campaignsData, profilesData] = await Promise.all([
-        TrafficSession.list("-created_date"),
-        UserProfile.list()
-      ]);
+      const campaignsData = await backendClient.sessions.list();
       setCampaigns(campaignsData);
-      setUserProfiles(profilesData);
+
     } catch (error) {
       console.error("Failed to load data:", error);
     }
@@ -106,7 +103,7 @@ export default function CampaignsPage() {
         ...(newStatus === 'stopped' && { end_time: new Date().toISOString() })
       };
       
-      await TrafficSession.update(campaignId, updates);
+      await backendClient.sessions.update(campaignId, updates);
       loadData();
     } catch (error) {
       console.error("Failed to update campaign status:", error);
@@ -117,7 +114,7 @@ export default function CampaignsPage() {
     if (!campaignToDelete) return;
     
     try {
-      await TrafficSession.delete(campaignToDelete.id);
+      await backendClient.sessions.delete(campaignToDelete.id);
       loadData();
     } catch (error) {
       console.error("Failed to delete campaign:", error);
@@ -129,9 +126,29 @@ export default function CampaignsPage() {
 
   const handleDownloadLogs = (filePath) => {
     if (!filePath) return;
-    // The platform serves generated files from a specific endpoint.
-    // We construct the URL and open it in a new tab to trigger the download.
-    window.open(`/logs/${filePath}`, '_blank');
+    window.open(`${import.meta.env.VITE_API_URL}/api/logs/${filePath}`, '_blank');
+  };
+
+  const handleDownloadTraffic = async (campaignId) => {
+    try {
+      const trafficData = await backendClient.traffic.getCampaignGenerated(campaignId);
+      if (trafficData.length === 0) {
+        console.log("No traffic data to download for this campaign.");
+        return;
+      }
+      const dataStr = JSON.stringify(trafficData, null, 2);
+      const blob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `traffic_${campaignId}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to download traffic data:", error);
+    }
   };
 
   const confirmDelete = (campaign) => {
@@ -366,6 +383,12 @@ export default function CampaignsPage() {
                               >
                                 <Download className="w-4 h-4 mr-2" />
                                 Download Logs
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleDownloadTraffic(campaign.id)}
+                              >
+                                <Download className="w-4 h-4 mr-2" />
+                                Download Traffic
                               </DropdownMenuItem>
                               {(campaign.status === 'running' || campaign.status === 'paused') && (
                                 <DropdownMenuItem 
