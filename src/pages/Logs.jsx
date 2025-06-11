@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { TrafficLogEntry } from "@/api/entities";
-import { TrafficSession } from "@/api/entities";
+import backendClient from "@/api/backendClient"; // Import backendClient for sessions
 import {
   Table,
   TableBody,
@@ -29,37 +28,41 @@ export default function LogsPage() {
   const [hasMore, setHasMore] = useState(true);
 
   useEffect(() => {
-    // Fetch campaigns for the filter dropdown
-    TrafficSession.list("-created_date").then(setCampaigns);
+    // Fetch campaigns for the filter dropdown using backendClient
+    backendClient.sessions.list().then(setCampaigns).catch(error => console.error("Failed to fetch campaigns:", error));
   }, []);
 
   const fetchLogs = useCallback(async (campaignId, pageNum) => {
-    if (pageNum === 1) setIsLoading(true);
-    else setIsLoadingMore(true);
+    // Log retrieval is currently not implemented on the backend.
+    // This frontend component currently only shows a placeholder message.
+    setIsLoading(false);
+    setIsLoadingMore(false);
+    setLogs([]); // Clear logs as there's no backend to fetch from yet
+    setHasMore(false);
 
-    let newLogs = [];
-    const offset = (pageNum - 1) * LOGS_PER_PAGE;
-
-    try {
-      if (campaignId === "all") {
-        newLogs = await TrafficLogEntry.list("-created_date", LOGS_PER_PAGE, offset);
-      } else {
-        newLogs = await TrafficLogEntry.filter({ campaign_id: campaignId }, "-created_date", LOGS_PER_PAGE, offset);
-      }
-
-      setHasMore(newLogs.length === LOGS_PER_PAGE);
-
-      if (pageNum === 1) {
-        setLogs(newLogs);
-      } else {
-        setLogs(prevLogs => [...prevLogs, ...newLogs]);
-      }
-    } catch (error) {
-      console.error("Failed to fetch logs:", error);
-    } finally {
-      setIsLoading(false);
-      setIsLoadingMore(false);
-    }
+    // Uncomment and implement log fetching once backend endpoints are available:
+    // if (pageNum === 1) setIsLoading(true);
+    // else setIsLoadingMore(true);
+    // let newLogs = [];
+    // const offset = (pageNum - 1) * LOGS_PER_PAGE;
+    // try {
+    //   if (campaignId === "all") {
+    //     newLogs = await backendClient.logs.list("-created_date", LOGS_PER_PAGE, offset);
+    //   } else {
+    //     newLogs = await backendClient.logs.filter({ campaign_id: campaignId }, "-created_date", LOGS_PER_PAGE, offset);
+    //   }
+    //   setHasMore(newLogs.length === LOGS_PER_PAGE);
+    //   if (pageNum === 1) {
+    //     setLogs(newLogs);
+    //   } else {
+    //     setLogs(prevLogs => [...prevLogs, ...newLogs]);
+    //   }
+    // } catch (error) {
+    //   console.error("Failed to fetch logs:", error);
+    // } finally {
+    //   setIsLoading(false);
+    //   setIsLoadingMore(false);
+    // }
   }, []);
 
   useEffect(() => {
@@ -70,6 +73,7 @@ export default function LogsPage() {
   }, [selectedCampaign, fetchLogs]);
 
   const handleLoadMore = () => {
+    // This will only be functional once log fetching is implemented in fetchLogs
     const nextPage = page + 1;
     setPage(nextPage);
     fetchLogs(selectedCampaign, nextPage);
