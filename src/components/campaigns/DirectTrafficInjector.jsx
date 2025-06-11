@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
+import backendClient from "@/api/backendClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { TrafficSession } from "@/api/entities";
-import { TrafficLogEntry } from "@/api/entities";
-import { generateTraffic } from "@/api/functions"; // Import the new backend function
-import { Play, Square, Zap, Loader2, Server, AlertCircle } from "lucide-react";
+import { Play, Square, Zap, Loader2, Server, AlertCircle, CheckCircle, XCircle } from "lucide-react";
+import { motion } from "framer-motion";
 
 export default function DirectTrafficInjector({ campaign, onUpdate }) {
   const [isInjecting, setIsInjecting] = useState(false);
@@ -28,7 +29,7 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
     console.log(`[Injector] Starting backend traffic generation for campaign: ${campaign.name}`);
 
     // Update campaign status immediately
-    await TrafficSession.update(campaign.id, {
+    await backendClient.sessions.update(campaign.id, {
       status: 'running',
       start_time: new Date().toISOString(),
     });
@@ -36,7 +37,7 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
     const runGenerationCycle = async () => {
       try {
         console.log(`[Injector] Calling Python backend for campaign ${campaign.id}`);
-        const { data: newLogs, error: funcError } = await generateTraffic(campaign);
+        const { data: newLogs, error: funcError } = await backendClient.traffic.generate(campaign);
         
         if (funcError || !Array.isArray(newLogs)) {
             const errorMessage = funcError?.message || "Backend function returned invalid data.";
@@ -50,19 +51,19 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
         console.log(`[Injector] Received ${newLogs.length} new log entries from backend.`);
 
         // 1. Save new logs to the database
-        await TrafficLogEntry.bulkCreate(newLogs);
+        await backendClient.logs.bulkCreate(newLogs);
 
         // 2. Fetch the latest campaign data to avoid overwriting stats
-        const currentSessions = await TrafficSession.filter({ id: campaign.id });
-        if (!currentSessions || currentSessions.length === 0) return;
-        const currentCampaign = currentSessions[0];
+        const currentSessions = await backendClient.sessions.list();
+        const currentCampaign = currentSessions.find(s => s.id === campaign.id);
+        if (!currentCampaign) return;
         
         // 3. Update campaign stats
         const successfulNewLogs = newLogs.filter(log => log.success).length;
         const total_requests = (currentCampaign.total_requests || 0) + newLogs.length;
         const successful_requests = (currentCampaign.successful_requests || 0) + successfulNewLogs;
         
-        await TrafficSession.update(campaign.id, {
+        await backendClient.sessions.update(campaign.id, {
             total_requests,
             successful_requests,
             last_activity_time: new Date().toISOString(),
@@ -90,7 +91,7 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
           clearInterval(intervalRef.current);
       }
       setIsInjecting(false);
-      await TrafficSession.update(campaign.id, {
+      await backendClient.sessions.update(campaign.id, {
         status: 'stopped',
         end_time: new Date().toISOString()
       });
