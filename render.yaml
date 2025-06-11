@@ -20,12 +20,13 @@ services:
     name: traffic-generator-frontend
     env: node
     buildCommand: |
+      cd frontend
       npm install
       npm run build
     startCommand: |
-      npm install -g http-server
-      cd dist
-      http-server -a 0.0.0.0 -p $PORT
+      cd frontend
+      npm install -g serve
+      serve -s dist --listen 0.0.0.0:$PORT
     envVars:
       - key: NODE_VERSION
         value: 18.0.0
