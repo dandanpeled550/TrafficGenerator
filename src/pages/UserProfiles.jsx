@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect } from "react";
-import { UserProfile } from "@/api/entities";
+// import { UserProfile } from "@/api/entities"; // Removed as backend profiles endpoint was removed
 import UserProfileCard from "../components/profiles/UserProfileCard";
 import UserProfileForm from "../components/profiles/UserProfileForm";
 import { Button } from "@/components/ui/button";
-import { PlusCircle, Users, Loader2, Search, Trash2 } from "lucide-react"; // Added Trash2 icon
+import { PlusCircle, Users, Loader2, Search, Trash2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Dialog,
@@ -28,18 +27,22 @@ export default function UserProfilesPage() {
   const [profileToDelete, setProfileToDelete] = useState(null);
 
   useEffect(() => {
-    loadProfiles();
+    // User profile fetching is currently not implemented on the backend.
+    // This component currently only shows a placeholder message.
+    setIsLoading(false);
+    setProfiles([]); // Clear profiles as there's no backend to fetch from yet
   }, []);
 
   const loadProfiles = async () => {
-    setIsLoading(true);
-    try {
-      const data = await UserProfile.list("-created_date");
-      setProfiles(data);
-    } catch (error) {
-      console.error("Failed to load profiles:", error);
-    }
-    setIsLoading(false);
+    // setIsLoading(true);
+    // try {
+    //   const data = await UserProfile.list("-created_date");
+    //   setProfiles(data);
+    // } catch (error) {
+    //   console.error("Failed to load profiles:", error);
+    // } finally {
+    //   setIsLoading(false);
+    // }
   };
 
   const handleOpenForm = (profile = null) => {
@@ -55,32 +58,36 @@ export default function UserProfilesPage() {
   const handleSubmitProfile = async (profileData) => {
     setIsSubmitting(true);
     try {
-      if (editingProfile) {
-        await UserProfile.update(editingProfile.id, profileData);
-      } else {
-        await UserProfile.create(profileData);
-      }
-      await loadProfiles();
+      // if (editingProfile) {
+      //   await UserProfile.update(editingProfile.id, profileData);
+      // } else {
+      //   await UserProfile.create(profileData);
+      // }
+      // await loadProfiles();
+      // handleCloseForm();
+      console.log("User profile operations are not currently enabled on the backend.");
       handleCloseForm();
     } catch (error) {
       console.error("Failed to save profile:", error);
-      // You might want to show an error toast to the user here
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsSubmitting(false);
   };
   
   const handleDeleteProfile = async () => {
     if (!profileToDelete) return;
-    setIsSubmitting(true); // Use for delete operation as well
+    setIsSubmitting(true);
     try {
-      await UserProfile.delete(profileToDelete.id);
-      await loadProfiles();
+      // await UserProfile.delete(profileToDelete.id);
+      // await loadProfiles();
+      console.log("User profile deletion is not currently enabled on the backend.");
     } catch (error) {
       console.error("Failed to delete profile:", error);
+    } finally {
+      setIsSubmitting(false);
+      setShowDeleteConfirm(false);
+      setProfileToDelete(null);
     }
-    setIsSubmitting(false);
-    setShowDeleteConfirm(false);
-    setProfileToDelete(null);
   };
 
   const confirmDelete = (profile) => {
@@ -143,19 +150,17 @@ export default function UserProfilesPage() {
             className="text-center py-16 bg-slate-900/30 rounded-xl border border-slate-800"
           >
             <Users className="w-20 h-20 text-slate-600 mx-auto mb-6" />
-            <h2 className="text-2xl font-semibold text-white mb-2">No User Profiles Found</h2>
+            <h2 className="text-2xl font-semibold text-white mb-2">User Profiles Not Available</h2>
             <p className="text-slate-400 mb-6">
-              {searchTerm ? "No profiles match your search." : "Get started by creating your first user profile."}
+              User profile management is currently not enabled on the backend.
             </p>
-            {!searchTerm && (
-              <Button
+            <Button
                 onClick={() => handleOpenForm()}
                 className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white"
               >
                 <PlusCircle className="w-5 h-5 mr-2" />
-                Create Profile
+                Create Profile (Disabled)
               </Button>
-            )}
           </motion.div>
         ) : (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -182,10 +187,10 @@ export default function UserProfilesPage() {
             <DialogContent className="bg-slate-900 border-slate-800 text-slate-200 sm:max-w-3xl max-h-[90vh] overflow-y-auto p-0">
               <DialogHeader className="p-6 pb-4 border-b border-slate-800">
                 <DialogTitle className="text-2xl font-bold text-white">
-                  {editingProfile ? "Edit User Profile" : "Create New User Profile"}
+                  {editingProfile ? "Edit User Profile (Disabled)" : "Create New User Profile (Disabled)"}
                 </DialogTitle>
                 <DialogDescription className="text-slate-400">
-                  {editingProfile ? "Modify the details of this user persona." : "Define a new user persona for targeted campaigns."}
+                  User profile operations are not currently enabled on the backend.
                 </DialogDescription>
               </DialogHeader>
               <div className="p-6">
@@ -199,25 +204,27 @@ export default function UserProfilesPage() {
             </DialogContent>
           </Dialog>
         )}
+
+        {showDeleteConfirm && (
+          <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+            <DialogContent className="bg-slate-900 border-slate-800 text-slate-200">
+              <DialogHeader>
+                <DialogTitle className="text-xl text-white">Confirm Deletion</DialogTitle>
+                <DialogDescription className="text-slate-400">
+                  Are you sure you want to delete the profile "{profileToDelete?.profile_name}"? This action cannot be undone.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => setShowDeleteConfirm(false)} className="border-slate-700 hover:bg-slate-800">Cancel</Button>
+                <Button variant="destructive" onClick={handleDeleteProfile} disabled={isSubmitting}>
+                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                  Delete
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
       </AnimatePresence>
-      
-      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
-        <DialogContent className="bg-slate-900 border-slate-800 text-slate-200">
-          <DialogHeader>
-            <DialogTitle className="text-xl text-white">Confirm Deletion</DialogTitle>
-            <DialogDescription className="text-slate-400">
-              Are you sure you want to delete the profile "{profileToDelete?.profile_name}"? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)} className="border-slate-700 hover:bg-slate-800">Cancel</Button>
-            <Button variant="destructive" onClick={handleDeleteProfile} disabled={isSubmitting}>
-              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
