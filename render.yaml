@@ -24,7 +24,7 @@ services:
       npm run build
     startCommand: |
       npm install -g serve
-      serve -s dist -l $PORT
+      serve -s dist --listen tcp://0.0.0.0:$PORT
     envVars:
       - key: NODE_VERSION
         value: 18.0.0
