@@ -31,6 +31,12 @@ export default function Dashboard() {
     loadSessions();
     generateMockChartData();
     checkBackendConnection();
+
+    const interval = setInterval(() => {
+      checkBackendConnection();
+    }, 10000); // Check every 10 seconds
+
+    return () => clearInterval(interval); // Clean up interval on unmount
   }, []);
 
   const checkBackendConnection = async () => {
