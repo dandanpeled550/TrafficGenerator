@@ -69,15 +69,14 @@ async def update_profile(profile_id: str, profile_update: UserProfileUpdate):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
     
     current_profile = profiles_db[profile_id]
-    update_data = profile_update.model_dump(exclude_unset=True)
     
-    for key, value in update_data.items():
-        setattr(current_profile, key, value)
-        
-    current_profile.updated_at = datetime.utcnow()
-    profiles_db[profile_id] = current_profile
+    # Use model_copy to apply updates while preserving Pydantic model integrity
+    updated_profile_instance = current_profile.model_copy(update=profile_update.model_dump(exclude_unset=True))
+    updated_profile_instance.updated_at = datetime.utcnow()
+    
+    profiles_db[profile_id] = updated_profile_instance
 
-    return current_profile
+    return updated_profile_instance
 
 @router.delete("/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_profile(profile_id: str):
