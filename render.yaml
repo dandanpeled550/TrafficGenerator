@@ -14,8 +14,8 @@ services:
       - key: ENVIRONMENT
         value: production
       - key: CORS_ORIGINS
-        value: https://traffic-generator-frontend.onrender.com
-
+        value: https://trafficgenerator-1.onrender.com
+        
   - type: web
     name: traffic-generator-frontend
     env: node
@@ -28,4 +28,4 @@ services:
       - key: NODE_VERSION
         value: 18.0.0
       - key: VITE_API_URL
-        value: https://traffic-generator-api.onrender.com 
+        value: https://trafficgenerator-hz4s.onrender.com
