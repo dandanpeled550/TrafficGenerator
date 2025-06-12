@@ -54,4 +54,11 @@ async def health_check():
     return {
         "status": "healthy",
         "version": "1.0.0"
+    }
+
+@app.get("/api/health")
+async def api_health_check():
+    return {
+        "status": "healthy",
+        "version": "1.0.0"
     } 
