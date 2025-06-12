@@ -1,19 +1,6 @@
-import { base44 } from './base44Client';
-
-
-
-
-export const Core = base44.integrations.Core;
-
-export const InvokeLLM = base44.integrations.Core.InvokeLLM;
-
-export const SendEmail = base44.integrations.Core.SendEmail;
-
-export const UploadFile = base44.integrations.Core.UploadFile;
-
-export const GenerateImage = base44.integrations.Core.GenerateImage;
-
-export const ExtractDataFromUploadedFile = base44.integrations.Core.ExtractDataFromUploadedFile;
+// This file previously contained integrations with @base44/sdk.
+// These integrations have been removed to ensure all application functions operate independently on your server.
+// Any functionality previously provided by these integrations should now be handled directly via your backendClient or other local implementations.
 
 
 
