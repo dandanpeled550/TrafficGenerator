@@ -15,8 +15,7 @@ const API_URL = process.env.VITE_API_URL; // Get backend API URL from environmen
 // Create proxy middleware
 const apiProxy = createProxyMiddleware('/api', {
   target: API_URL,
-  changeOrigin: true,
-  pathRewrite: { '^/api': '' }, // Rewrite path to remove /api prefix
+  changeOrigin: true
 });
 
 const server = http.createServer((req, res) => {
