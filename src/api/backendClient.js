@@ -87,6 +87,21 @@ const backendClient = {
       return response.json();
     },
   },
+
+  // New: Connection check endpoint
+  checkConnection: async () => {
+    try {
+      const response = await fetch(`${API_URL}/health`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Health check failed: ${response.status} ${response.statusText} - ${errorText}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error("Connection check error:", error);
+      throw new Error(`Failed to connect to backend: ${error.message}`);
+    }
+  },
 };
 
 export default backendClient; 

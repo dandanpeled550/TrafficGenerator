@@ -2,6 +2,7 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createProxyMiddleware } from 'http-proxy-middleware';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -9,7 +10,22 @@ const __dirname = path.dirname(__filename);
 const PORT = process.env.PORT || 3000; // Use Render's PORT or default to 3000
 const buildPath = path.join(__dirname, 'dist'); // Path to your built frontend files
 
+const API_URL = process.env.VITE_API_URL; // Get backend API URL from environment variables
+
+// Create proxy middleware
+const apiProxy = createProxyMiddleware('/api', {
+  target: API_URL,
+  changeOrigin: true,
+  pathRewrite: { '^/api': '' }, // Rewrite path to remove /api prefix
+});
+
 const server = http.createServer((req, res) => {
+  // Apply the proxy middleware for API requests
+  if (req.url.startsWith('/api')) {
+    apiProxy(req, res);
+    return;
+  }
+
   let filePath = path.join(buildPath, req.url);
 
   // If the request is for the root or a directory, serve index.html
@@ -32,7 +48,7 @@ const server = http.createServer((req, res) => {
     '.mp4': 'video/mp4',
     '.woff': 'application/font-woff',
     '.ttf': 'application/font-ttf',
-    '.eot': 'application/vnd.ms-fontobject',
+    '.eot': 'application/font-eot',
     '.otf': 'application/font-otf',
     '.wasm': 'application/wasm'
   };
