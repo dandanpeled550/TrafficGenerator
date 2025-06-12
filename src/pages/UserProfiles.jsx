@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-// import { UserProfile } from "@/api/entities"; // Removed as backend profiles endpoint was removed
+import backendClient from "@/api/backendClient"; // Import backendClient
 import UserProfileCard from "../components/profiles/UserProfileCard";
 import UserProfileForm from "../components/profiles/UserProfileForm";
 import { Button } from "@/components/ui/button";
@@ -27,22 +27,20 @@ export default function UserProfilesPage() {
   const [profileToDelete, setProfileToDelete] = useState(null);
 
   useEffect(() => {
-    // User profile fetching is currently not implemented on the backend.
-    // This component currently only shows a placeholder message.
-    setIsLoading(false);
-    setProfiles([]); // Clear profiles as there's no backend to fetch from yet
+    loadProfiles();
   }, []);
 
   const loadProfiles = async () => {
-    // setIsLoading(true);
-    // try {
-    //   const data = await UserProfile.list("-created_date");
-    //   setProfiles(data);
-    // } catch (error) {
-    //   console.error("Failed to load profiles:", error);
-    // } finally {
-    //   setIsLoading(false);
-    // }
+    setIsLoading(true);
+    try {
+      const data = await backendClient.profiles.list(); // Use backendClient to fetch profiles
+      setProfiles(data);
+    } catch (error) {
+      console.error("Failed to load profiles:", error);
+      setProfiles([]); // Clear profiles on error
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleOpenForm = (profile = null) => {
@@ -58,17 +56,16 @@ export default function UserProfilesPage() {
   const handleSubmitProfile = async (profileData) => {
     setIsSubmitting(true);
     try {
-      // if (editingProfile) {
-      //   await UserProfile.update(editingProfile.id, profileData);
-      // } else {
-      //   await UserProfile.create(profileData);
-      // }
-      // await loadProfiles();
-      // handleCloseForm();
-      console.log("User profile operations are not currently enabled on the backend.");
+      if (editingProfile) {
+        await backendClient.profiles.update(editingProfile.id, profileData); // Use backendClient to update profile
+      } else {
+        await backendClient.profiles.create(profileData); // Use backendClient to create profile
+      }
+      await loadProfiles(); // Reload profiles after save
       handleCloseForm();
     } catch (error) {
       console.error("Failed to save profile:", error);
+      alert("Failed to save profile. Please check the console for details.");
     } finally {
       setIsSubmitting(false);
     }
@@ -78,11 +75,11 @@ export default function UserProfilesPage() {
     if (!profileToDelete) return;
     setIsSubmitting(true);
     try {
-      // await UserProfile.delete(profileToDelete.id);
-      // await loadProfiles();
-      console.log("User profile deletion is not currently enabled on the backend.");
+      await backendClient.profiles.delete(profileToDelete.id); // Use backendClient to delete profile
+      await loadProfiles(); // Reload profiles after delete
     } catch (error) {
       console.error("Failed to delete profile:", error);
+      alert("Failed to delete profile. Please check the console for details.");
     } finally {
       setIsSubmitting(false);
       setShowDeleteConfirm(false);
@@ -150,16 +147,16 @@ export default function UserProfilesPage() {
             className="text-center py-16 bg-slate-900/30 rounded-xl border border-slate-800"
           >
             <Users className="w-20 h-20 text-slate-600 mx-auto mb-6" />
-            <h2 className="text-2xl font-semibold text-white mb-2">User Profiles Not Available</h2>
+            <h2 className="text-2xl font-semibold text-white mb-2">No User Profiles Found</h2>
             <p className="text-slate-400 mb-6">
-              User profile management is currently not enabled on the backend.
+              Start by creating your first user profile to define unique personas for your traffic.
             </p>
             <Button
                 onClick={() => handleOpenForm()}
                 className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white"
               >
                 <PlusCircle className="w-5 h-5 mr-2" />
-                Create Profile (Disabled)
+                Create Profile
               </Button>
           </motion.div>
         ) : (
@@ -187,10 +184,10 @@ export default function UserProfilesPage() {
             <DialogContent className="bg-slate-900 border-slate-800 text-slate-200 sm:max-w-3xl max-h-[90vh] overflow-y-auto p-0">
               <DialogHeader className="p-6 pb-4 border-b border-slate-800">
                 <DialogTitle className="text-2xl font-bold text-white">
-                  {editingProfile ? "Edit User Profile (Disabled)" : "Create New User Profile (Disabled)"}
+                  {editingProfile ? "Edit User Profile" : "Create New User Profile"}
                 </DialogTitle>
                 <DialogDescription className="text-slate-400">
-                  User profile operations are not currently enabled on the backend.
+                  {editingProfile ? "Update the details of your user profile." : "Define a new user persona for your traffic campaigns."}
                 </DialogDescription>
               </DialogHeader>
               <div className="p-6">

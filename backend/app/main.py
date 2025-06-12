@@ -1,8 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import traffic, sessions
+from app.api import traffic, sessions, profiles
 import os
 from dotenv import load_dotenv
+from app.database import connect_to_mongo, close_mongo_connection # Import database functions
 
 # Load environment variables
 load_dotenv()
@@ -12,6 +13,15 @@ app = FastAPI(
     description="API for generating and managing traffic simulation sessions",
     version="1.0.0"
 )
+
+# Database connection events
+@app.on_event("startup")
+async def startup_db_client():
+    await connect_to_mongo()
+
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    await close_mongo_connection()
 
 # Get CORS origins from environment variable
 cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
@@ -28,6 +38,7 @@ app.add_middleware(
 # Include routers
 app.include_router(traffic.router, prefix="/api/traffic", tags=["traffic"])
 app.include_router(sessions.router, prefix="/api/sessions", tags=["sessions"])
+app.include_router(profiles.router, prefix="/api/profiles", tags=["profiles"])
 
 @app.get("/")
 async def root():
