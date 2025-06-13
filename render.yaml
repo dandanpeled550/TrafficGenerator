@@ -3,18 +3,18 @@ services:
     name: traffic-generator-api
     env: python
     buildCommand: |
-      cd backend && pip install -r requirements.txt
+      cd backend
+      pip install -r requirements.txt
     startCommand: |
       cd backend
-      python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+      uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.7
+        value: 3.11.0
       - key: ENVIRONMENT
         value: production
       - key: CORS_ORIGINS
-        value: https://trafficgenerator-1.onrender.com
-    env: python3.11
+        value: https://traffic-generator-frontend.onrender.com
         
   - type: web
     name: traffic-generator-frontend
@@ -28,4 +28,4 @@ services:
       - key: NODE_VERSION
         value: 18.0.0
       - key: VITE_API_URL
-        value: https://trafficgenerator-hz4s.onrender.com
+        value: https://traffic-generator-api.onrender.com
