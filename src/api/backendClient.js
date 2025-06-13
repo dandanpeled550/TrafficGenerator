@@ -91,7 +91,7 @@ const backendClient = {
   // New: Connection check endpoint
   checkConnection: async () => {
     try {
-      const response = await fetch(`${API_URL}/health`);
+      const response = await fetch(`${API_URL}/api/health`);
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Health check failed: ${response.status} ${response.statusText} - ${errorText}`);
