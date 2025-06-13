@@ -4,22 +4,17 @@ services:
     env: python
     buildCommand: |
       cd backend
-      python3.11 -m pip install --upgrade "pip>=23.0.1" setuptools wheel
-      python3.11 -m pip install --no-cache-dir --prefer-binary -c constraints.txt -r requirements.txt
+      pip install -r requirements.txt
     startCommand: |
       cd backend
-      python3.11 -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
+      uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.0
+        value: 3.9.18
       - key: ENVIRONMENT
         value: production
       - key: CORS_ORIGINS
         value: https://trafficgenerator-1.onrender.com
-      - key: PIP_NO_CACHE_DIR
-        value: "1"
-      - key: PIP_PREFER_BINARY
-        value: "1"
         
   - type: web
     name: traffic-generator-frontend
