@@ -9,11 +9,12 @@ services:
       python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.0
+        value: 3.11.7
       - key: ENVIRONMENT
         value: production
       - key: CORS_ORIGINS
         value: https://trafficgenerator-1.onrender.com
+    env: python3.11
         
   - type: web
     name: traffic-generator-frontend
