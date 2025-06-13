@@ -11,7 +11,7 @@ services:
       python3.9 -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: 3.9.18
+        value: 3.9.7
       - key: ENVIRONMENT
         value: production
       - key: CORS_ORIGINS
