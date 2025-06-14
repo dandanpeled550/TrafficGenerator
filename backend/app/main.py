@@ -1,64 +1,50 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from app.api import traffic, sessions, profiles
+from flask import Flask, jsonify
+from flask_cors import CORS
 import os
 from dotenv import load_dotenv
-# from app.database import connect_to_mongo, close_mongo_connection # Commented out database imports
+from app.api import traffic, sessions, profiles
 
 # Load environment variables
 load_dotenv()
 
-app = FastAPI(
-    title="Traffic Generator API",
-    description="API for generating and managing traffic simulation sessions",
-    version="1.0.0"
-)
-
-# Database connection events (Commented out for in-memory testing)
-# @app.on_event("startup")
-# async def startup_db_client():
-#     await connect_to_mongo()
-
-# @app.on_event("shutdown")
-# async def shutdown_db_client():
-#     await close_mongo_connection()
+app = Flask(__name__)
 
 # Get CORS origins from environment variable
 cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
 
 # Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+CORS(app, resources={
+    r"/*": {
+        "origins": cors_origins,
+        "allow_headers": ["*"],
+        "methods": ["*"]
+    }
+})
 
-# Include routers
-app.include_router(traffic.router, prefix="/api/traffic", tags=["traffic"])
-app.include_router(sessions.router, prefix="/api/sessions", tags=["sessions"])
-app.include_router(profiles.router, prefix="/api/profiles", tags=["profiles"])
+# Register blueprints
+app.register_blueprint(traffic.bp, url_prefix='/api/traffic')
+app.register_blueprint(sessions.bp, url_prefix='/api/sessions')
+app.register_blueprint(profiles.bp, url_prefix='/api/profiles')
 
-@app.get("/")
-async def root():
-    return {
+@app.route("/")
+def root():
+    return jsonify({
         "message": "Traffic Generator API is running",
         "version": "1.0.0",
         "environment": os.getenv("ENVIRONMENT", "development")
-    }
+    })
 
-@app.get("/health")
-async def health_check():
+@app.route("/health")
+def health_check():
     """Health check endpoint for monitoring"""
-    return {
+    return jsonify({
         "status": "healthy",
         "version": "1.0.0"
-    }
+    })
 
-@app.get("/api/health")
-async def api_health_check():
-    return {
+@app.route("/api/health")
+def api_health_check():
+    return jsonify({
         "status": "healthy",
         "version": "1.0.0"
-    } 
+    }) 

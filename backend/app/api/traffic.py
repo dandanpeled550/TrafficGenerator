@@ -1,14 +1,15 @@
 import os
 import json
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from flask import Blueprint, request, jsonify
 from typing import List, Optional, Dict, Any
 import asyncio
 import random
 import time
 from datetime import datetime
+from dataclasses import dataclass
+from typing import Optional, List, Dict, Any
 
-router = APIRouter()
+bp = Blueprint('traffic', __name__)
 
 TRAFFIC_DATA_DIR = os.path.join(os.path.dirname(__file__), 'traffic_data')
 os.makedirs(TRAFFIC_DATA_DIR, exist_ok=True)
@@ -32,41 +33,55 @@ def append_traffic_to_file(campaign_id: str, traffic_data: Dict[str, Any]):
             with open(file, 'w') as f:
                 json.dump([traffic_data], f)
 
-class TrafficConfig(BaseModel):
+@dataclass
+class TrafficConfig:
     campaign_id: str
     target_url: str
     requests_per_minute: int = 10
     duration_minutes: Optional[int] = 60
-    geo_locations: List[str] = ["United States"]
+    geo_locations: List[str] = None
     rtb_config: Optional[Dict[str, Any]] = None
     config: Optional[Dict[str, Any]] = None
-    user_profiles: List[Dict[str, Any]] = []
+    user_profiles: List[Dict[str, Any]] = None
 
-class TrafficResponse(BaseModel):
-    success: bool
-    message: str
-    data: Optional[Dict[str, Any]] = None
+    def __post_init__(self):
+        if self.geo_locations is None:
+            self.geo_locations = ["United States"]
+        if self.user_profiles is None:
+            self.user_profiles = []
 
-@router.post("/generate", response_model=TrafficResponse)
-async def generate_traffic(config: TrafficConfig):
+@bp.route("/generate", methods=['POST'])
+def generate_traffic():
     try:
+        data = request.get_json()
+        config = TrafficConfig(**data)
+
         # Validate configuration
         if config.requests_per_minute <= 0:
-            raise HTTPException(status_code=400, detail="Requests per minute must be greater than 0")
+            return jsonify({
+                "success": False,
+                "message": "Requests per minute must be greater than 0"
+            }), 400
         
         if config.duration_minutes is not None and config.duration_minutes <= 0:
-            raise HTTPException(status_code=400, detail="Duration must be greater than 0")
+            return jsonify({
+                "success": False,
+                "message": "Duration must be greater than 0"
+            }), 400
 
         # Start traffic generation in background
         asyncio.create_task(generate_traffic_background(config))
         
-        return TrafficResponse(
-            success=True,
-            message="Traffic generation started",
-            data={"campaign_id": config.campaign_id}
-        )
+        return jsonify({
+            "success": True,
+            "message": "Traffic generation started",
+            "data": {"campaign_id": config.campaign_id}
+        })
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
 
 async def generate_traffic_background(config: TrafficConfig):
     """Background task to generate traffic"""
@@ -137,17 +152,17 @@ async def simulate_request(traffic_data: Dict[str, Any]):
     await asyncio.sleep(random.uniform(0.1, 0.5))
     return True 
 
-@router.get("/generated")
+@bp.route("/generated")
 def get_all_generated_traffic():
     if not os.path.exists(ALL_TRAFFIC_FILE):
-        return []
+        return jsonify([])
     with open(ALL_TRAFFIC_FILE, 'r') as f:
-        return json.load(f)
+        return jsonify(json.load(f))
 
-@router.get("/generated/{campaign_id}")
+@bp.route("/generated/<campaign_id>")
 def get_campaign_generated_traffic(campaign_id: str):
     campaign_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}.json')
     if not os.path.exists(campaign_file):
-        return []
+        return jsonify([])
     with open(campaign_file, 'r') as f:
-        return json.load(f) 
+        return jsonify(json.load(f)) 
