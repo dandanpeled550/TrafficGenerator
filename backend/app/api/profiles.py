@@ -6,8 +6,14 @@ from dataclasses import dataclass, field
 bp = Blueprint('profiles', __name__)
 
 @dataclass
-class UserProfileBase:
+class UserProfile:
+    # Required fields (no defaults)
+    id: str
     name: str
+    created_at: datetime
+    updated_at: datetime
+    
+    # Optional fields with defaults
     description: Optional[str] = None
     user_agent: Optional[str] = None
     geo_location: Optional[str] = None
@@ -18,12 +24,6 @@ class UserProfileBase:
     custom_headers: Dict[str, str] = field(default_factory=dict)
     custom_cookies: Dict[str, str] = field(default_factory=dict)
     custom_params: Dict[str, str] = field(default_factory=dict)
-
-@dataclass
-class UserProfile(UserProfileBase):
-    id: str
-    created_at: datetime
-    updated_at: datetime
 
     def to_dict(self):
         return {
@@ -54,6 +54,8 @@ def create_profile():
     new_profile = UserProfile(
         id=profile_id,
         name=data['name'],
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
         description=data.get('description'),
         user_agent=data.get('user_agent'),
         geo_location=data.get('geo_location'),
@@ -63,9 +65,7 @@ def create_profile():
         referrer=data.get('referrer'),
         custom_headers=data.get('custom_headers', {}),
         custom_cookies=data.get('custom_cookies', {}),
-        custom_params=data.get('custom_params', {}),
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        custom_params=data.get('custom_params', {})
     )
     
     profiles_db[profile_id] = new_profile
