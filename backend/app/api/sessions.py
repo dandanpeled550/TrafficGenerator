@@ -9,9 +9,16 @@ from datetime import datetime
 bp = Blueprint('sessions', __name__)
 
 @dataclass
-class SessionBase:
+class Session:
+    # Required fields (no defaults)
+    id: str
     name: str
     target_url: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    
+    # Optional fields with defaults
     requests_per_minute: int = 10
     duration_minutes: Optional[int] = 60
     geo_locations: List[str] = field(default_factory=list)
@@ -25,13 +32,6 @@ class SessionBase:
     log_format: Optional[str] = None
     user_agents: List[str] = field(default_factory=list)
     referrers: List[str] = field(default_factory=list)
-
-@dataclass
-class Session(SessionBase):
-    id: str
-    status: str
-    created_at: datetime
-    updated_at: datetime
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     total_requests: int = 0
@@ -81,6 +81,9 @@ def create_session():
         id=session_id,
         name=data['name'],
         target_url=data['target_url'],
+        status="draft",
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
         requests_per_minute=data.get('requests_per_minute', 10),
         duration_minutes=data.get('duration_minutes', 60),
         geo_locations=data.get('geo_locations', []),
@@ -93,14 +96,11 @@ def create_session():
         log_level=data.get('log_level'),
         log_format=data.get('log_format'),
         user_agents=data.get('user_agents', []),
-        referrers=data.get('referrers', []),
-        status="draft",
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow()
+        referrers=data.get('referrers', [])
     )
     
     sessions[session_id] = new_session
-    return jsonify(new_session.to_dict())
+    return jsonify(new_session.to_dict()), 201
 
 @bp.route("/", methods=['GET'])
 def list_sessions():
@@ -140,4 +140,4 @@ def delete_session(session_id):
         return jsonify({"error": "Session not found"}), 404
     
     del sessions[session_id]
-    return jsonify({"message": "Session deleted successfully"}) 
+    return '', 204 
