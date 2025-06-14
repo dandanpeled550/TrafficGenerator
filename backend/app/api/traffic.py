@@ -2,12 +2,11 @@ import os
 import json
 from flask import Blueprint, request, jsonify
 from typing import List, Optional, Dict, Any
-import asyncio
+import threading
 import random
 import time
 from datetime import datetime
 from dataclasses import dataclass
-from typing import Optional, List, Dict, Any
 
 bp = Blueprint('traffic', __name__)
 
@@ -50,6 +49,36 @@ class TrafficConfig:
         if self.user_profiles is None:
             self.user_profiles = []
 
+def generate_traffic_background(config: TrafficConfig):
+    """Background task to generate traffic"""
+    start_time = time.time()
+    request_count = 0
+    
+    while True:
+        # Check if we should stop
+        if config.duration_minutes and (time.time() - start_time) > (config.duration_minutes * 60):
+            break
+            
+        # Generate traffic batch
+        batch_size = min(config.requests_per_minute, 10)  # Process in smaller batches
+        for _ in range(batch_size):
+            try:
+                # Generate traffic data
+                traffic_data = generate_traffic_data(config)
+                
+                # Simulate request
+                simulate_request(traffic_data)
+                
+                append_traffic_to_file(config.campaign_id, traffic_data)
+                
+                request_count += 1
+                
+            except Exception as e:
+                print(f"Error generating traffic: {str(e)}")
+        
+        # Wait for next batch
+        time.sleep(60 / config.requests_per_minute)
+
 @bp.route("/generate", methods=['POST'])
 def generate_traffic():
     try:
@@ -69,8 +98,10 @@ def generate_traffic():
                 "message": "Duration must be greater than 0"
             }), 400
 
-        # Start traffic generation in background
-        asyncio.create_task(generate_traffic_background(config))
+        # Start traffic generation in background thread
+        thread = threading.Thread(target=generate_traffic_background, args=(config,))
+        thread.daemon = True
+        thread.start()
         
         return jsonify({
             "success": True,
@@ -82,36 +113,6 @@ def generate_traffic():
             "success": False,
             "message": str(e)
         }), 500
-
-async def generate_traffic_background(config: TrafficConfig):
-    """Background task to generate traffic"""
-    start_time = time.time()
-    request_count = 0
-    
-    while True:
-        # Check if we should stop
-        if config.duration_minutes and (time.time() - start_time) > (config.duration_minutes * 60):
-            break
-            
-        # Generate traffic batch
-        batch_size = min(config.requests_per_minute, 10)  # Process in smaller batches
-        for _ in range(batch_size):
-            try:
-                # Generate traffic data
-                traffic_data = generate_traffic_data(config)
-                
-                # Simulate request
-                await simulate_request(traffic_data)
-                
-                append_traffic_to_file(config.campaign_id, traffic_data)
-                
-                request_count += 1
-                
-            except Exception as e:
-                print(f"Error generating traffic: {str(e)}")
-        
-        # Wait for next batch
-        await asyncio.sleep(60 / config.requests_per_minute)
 
 def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
     """Generate traffic data based on configuration"""
@@ -145,12 +146,12 @@ def generate_adid() -> str:
     """Generate a random advertising ID"""
     return f"{random.randint(10000000, 99999999)}-{random.randint(1000, 9999)}-{random.randint(1000, 9999)}-{random.randint(1000, 9999)}"
 
-async def simulate_request(traffic_data: Dict[str, Any]):
+def simulate_request(traffic_data: Dict[str, Any]):
     """Simulate making a request with the generated traffic data"""
     # Here you would typically make an actual HTTP request
     # For now, we'll just simulate it with a small delay
-    await asyncio.sleep(random.uniform(0.1, 0.5))
-    return True 
+    time.sleep(random.uniform(0.1, 0.5))
+    return True
 
 @bp.route("/generated")
 def get_all_generated_traffic():

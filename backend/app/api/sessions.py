@@ -1,44 +1,34 @@
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from flask import Blueprint, request, jsonify
+from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 # from bson import ObjectId # Commented out ObjectId import
 
 # from app.database import get_database # Commented out database import
 
-router = APIRouter()
+bp = Blueprint('sessions', __name__)
 
-class SessionBase(BaseModel):
+@dataclass
+class SessionBase:
     name: str
     target_url: str
     requests_per_minute: int = 10
     duration_minutes: Optional[int] = 60
-    geo_locations: List[str] = Field(default_factory=list)
-    rtb_config: Optional[Dict[str, Any]] = Field(default_factory=dict)
-    config: Optional[Dict[str, Any]] = Field(default_factory=dict)
-    user_profile_ids: List[str] = Field(default_factory=list)
-    profile_user_counts: Optional[Dict[str, int]] = Field(default_factory=dict)
+    geo_locations: List[str] = field(default_factory=list)
+    rtb_config: Optional[Dict[str, Any]] = field(default_factory=dict)
+    config: Optional[Dict[str, Any]] = field(default_factory=dict)
+    user_profile_ids: List[str] = field(default_factory=list)
+    profile_user_counts: Optional[Dict[str, int]] = field(default_factory=dict)
     total_profile_users: int = 0
     log_file_path: Optional[str] = None
     log_level: Optional[str] = None
     log_format: Optional[str] = None
-    user_agents: List[str] = Field(default_factory=list)
-    referrers: List[str] = Field(default_factory=list)
+    user_agents: List[str] = field(default_factory=list)
+    referrers: List[str] = field(default_factory=list)
 
-class SessionCreate(SessionBase):
-    pass
-
-class SessionUpdate(SessionBase):
-    status: Optional[str] = None
-    start_time: Optional[datetime] = None
-    end_time: Optional[datetime] = None
-    total_requests: Optional[int] = None
-    successful_requests: Optional[int] = None
-    last_activity_time: Optional[datetime] = None
-    progress_percentage: Optional[int] = None
-
+@dataclass
 class Session(SessionBase):
-    id: str # Revert to str for in-memory
+    id: str
     status: str
     created_at: datetime
     updated_at: datetime
@@ -49,64 +39,105 @@ class Session(SessionBase):
     last_activity_time: Optional[datetime] = None
     progress_percentage: int = 0
 
-    class Config:
-        # populate_by_name = True # Not needed for in-memory
-        # json_encoders = { # Not needed for in-memory
-        #     datetime: lambda dt: dt.isoformat()
-        # }
-        from_attributes = True # Restore from_attributes for Pydantic v2
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'target_url': self.target_url,
+            'requests_per_minute': self.requests_per_minute,
+            'duration_minutes': self.duration_minutes,
+            'geo_locations': self.geo_locations,
+            'rtb_config': self.rtb_config,
+            'config': self.config,
+            'user_profile_ids': self.user_profile_ids,
+            'profile_user_counts': self.profile_user_counts,
+            'total_profile_users': self.total_profile_users,
+            'log_file_path': self.log_file_path,
+            'log_level': self.log_level,
+            'log_format': self.log_format,
+            'user_agents': self.user_agents,
+            'referrers': self.referrers,
+            'status': self.status,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat(),
+            'start_time': self.start_time.isoformat() if self.start_time else None,
+            'end_time': self.end_time.isoformat() if self.end_time else None,
+            'total_requests': self.total_requests,
+            'successful_requests': self.successful_requests,
+            'last_activity_time': self.last_activity_time.isoformat() if self.last_activity_time else None,
+            'progress_percentage': self.progress_percentage
+        }
 
 # In-memory storage for sessions (temporarily for testing)
 sessions: Dict[str, Session] = {}
 
-@router.post("/", response_model=Session)
-async def create_session(session: SessionCreate):
+@bp.route("/", methods=['POST'])
+def create_session():
     """Create a new traffic session"""
+    data = request.get_json()
     session_id = f"session_{len(sessions) + 1}"
+    
     new_session = Session(
         id=session_id,
-        **session.model_dump(), # Use model_dump for Pydantic v2
+        name=data['name'],
+        target_url=data['target_url'],
+        requests_per_minute=data.get('requests_per_minute', 10),
+        duration_minutes=data.get('duration_minutes', 60),
+        geo_locations=data.get('geo_locations', []),
+        rtb_config=data.get('rtb_config', {}),
+        config=data.get('config', {}),
+        user_profile_ids=data.get('user_profile_ids', []),
+        profile_user_counts=data.get('profile_user_counts', {}),
+        total_profile_users=data.get('total_profile_users', 0),
+        log_file_path=data.get('log_file_path'),
+        log_level=data.get('log_level'),
+        log_format=data.get('log_format'),
+        user_agents=data.get('user_agents', []),
+        referrers=data.get('referrers', []),
         status="draft",
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
+    
     sessions[session_id] = new_session
-    return new_session
+    return jsonify(new_session.to_dict())
 
-@router.get("/", response_model=List[Session])
-async def list_sessions():
+@bp.route("/", methods=['GET'])
+def list_sessions():
     """List all traffic sessions"""
-    return list(sessions.values())
+    return jsonify([session.to_dict() for session in sessions.values()])
 
-@router.get("/{session_id}", response_model=Session)
-async def get_session(session_id: str):
+@bp.route("/<session_id>", methods=['GET'])
+def get_session(session_id):
     """Get a specific traffic session"""
     if session_id not in sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return sessions[session_id]
+        return jsonify({"error": "Session not found"}), 404
+    return jsonify(sessions[session_id].to_dict())
 
-@router.put("/{session_id}", response_model=Session)
-async def update_session(session_id: str, session_update: SessionUpdate):
+@bp.route("/<session_id>", methods=['PUT'])
+def update_session(session_id):
     """Update a traffic session"""
     if session_id not in sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
+        return jsonify({"error": "Session not found"}), 404
     
+    data = request.get_json()
     current_session = sessions[session_id]
-    update_data = session_update.model_dump(exclude_unset=True) # Use model_dump for Pydantic v2
     
-    for key, value in update_data.items():
-        setattr(current_session, key, value)
+    # Update fields if they exist in the request
+    for key, value in data.items():
+        if hasattr(current_session, key):
+            setattr(current_session, key, value)
     
     current_session.updated_at = datetime.utcnow()
     sessions[session_id] = current_session
     
-    return current_session
+    return jsonify(current_session.to_dict())
 
-@router.delete("/{session_id}")
-async def delete_session(session_id: str):
+@bp.route("/<session_id>", methods=['DELETE'])
+def delete_session(session_id):
     """Delete a traffic session"""
     if session_id not in sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
+        return jsonify({"error": "Session not found"}), 404
     
     del sessions[session_id]
-    return {"message": "Session deleted successfully"} 
+    return jsonify({"message": "Session deleted successfully"}) 
