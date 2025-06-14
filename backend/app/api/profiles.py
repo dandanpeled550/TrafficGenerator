@@ -1,93 +1,108 @@
-from fastapi import APIRouter, HTTPException, status
+from flask import Blueprint, request, jsonify
 from typing import List, Optional, Dict
-# from bson import ObjectId # Commented out ObjectId import
 from datetime import datetime
+from dataclasses import dataclass, field
 
-# from app.database import get_database # Commented out database import
-from app.models import UserProfile, UserProfileCreate, UserProfileUpdate
+bp = Blueprint('profiles', __name__)
 
-router = APIRouter()
+@dataclass
+class UserProfileBase:
+    name: str
+    description: Optional[str] = None
+    user_agent: Optional[str] = None
+    geo_location: Optional[str] = None
+    device_type: Optional[str] = None
+    browser: Optional[str] = None
+    os: Optional[str] = None
+    referrer: Optional[str] = None
+    custom_headers: Dict[str, str] = field(default_factory=dict)
+    custom_cookies: Dict[str, str] = field(default_factory=dict)
+    custom_params: Dict[str, str] = field(default_factory=dict)
 
-# In-memory storage for user profiles (temporarily for testing)
+@dataclass
+class UserProfile(UserProfileBase):
+    id: str
+    created_at: datetime
+    updated_at: datetime
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'description': self.description,
+            'user_agent': self.user_agent,
+            'geo_location': self.geo_location,
+            'device_type': self.device_type,
+            'browser': self.browser,
+            'os': self.os,
+            'referrer': self.referrer,
+            'custom_headers': self.custom_headers,
+            'custom_cookies': self.custom_cookies,
+            'custom_params': self.custom_params,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat()
+        }
+
+# In-memory storage for user profiles
 profiles_db: Dict[str, UserProfile] = {}
 
-@router.post("/", response_model=UserProfile, status_code=status.HTTP_201_CREATED)
-async def create_profile(profile: UserProfileCreate):
-    # db = get_database() # Commented out database access
-    profile_id = str(len(profiles_db) + 1) # Generate a simple ID
+@bp.route("/", methods=['POST'])
+def create_profile():
+    data = request.get_json()
+    profile_id = str(len(profiles_db) + 1)
+    
     new_profile = UserProfile(
         id=profile_id,
-        **profile.model_dump(exclude_none=True),
+        name=data['name'],
+        description=data.get('description'),
+        user_agent=data.get('user_agent'),
+        geo_location=data.get('geo_location'),
+        device_type=data.get('device_type'),
+        browser=data.get('browser'),
+        os=data.get('os'),
+        referrer=data.get('referrer'),
+        custom_headers=data.get('custom_headers', {}),
+        custom_cookies=data.get('custom_cookies', {}),
+        custom_params=data.get('custom_params', {}),
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow()
     )
+    
     profiles_db[profile_id] = new_profile
-    return new_profile
+    return jsonify(new_profile.to_dict()), 201
 
-@router.get("/", response_model=List[UserProfile])
-async def list_profiles():
-    # db = get_database() # Commented out database access
-    # profiles = [] # Commented out database query
-    # async for profile in db["user_profiles"].find(): # Commented out database query
-    #     profiles.append(UserProfile(**profile)) # Commented out database query
-    return list(profiles_db.values())
+@bp.route("/", methods=['GET'])
+def list_profiles():
+    return jsonify([profile.to_dict() for profile in profiles_db.values()])
 
-@router.get("/{profile_id}", response_model=UserProfile)
-async def get_profile(profile_id: str):
-    # db = get_database() # Commented out database access
-    # if not ObjectId.is_valid(profile_id): # Commented out ObjectId check
-    #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid ObjectId format") # Commented out ObjectId check
-    # profile = await db["user_profiles"].find_one({"_id": ObjectId(profile_id)}) # Commented out database query
-    if profile_id not in profiles_db: # In-memory check
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
-    return profiles_db[profile_id]
+@bp.route("/<profile_id>", methods=['GET'])
+def get_profile(profile_id):
+    if profile_id not in profiles_db:
+        return jsonify({"error": "Profile not found"}), 404
+    return jsonify(profiles_db[profile_id].to_dict())
 
-@router.put("/{profile_id}", response_model=UserProfile)
-async def update_profile(profile_id: str, profile_update: UserProfileUpdate):
-    # db = get_database() # Commented out database access
-    # if not ObjectId.is_valid(profile_id): # Commented out ObjectId check
-    #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid ObjectId format") # Commented out ObjectId check
-
-    # update_data = profile_update.model_dump(by_alias=True, exclude_none=True) # Commented out database update data
-    # update_data["updated_at"] = datetime.now() # Commented out database update time
-
-    # if len(update_data) >= 1: # Commented out database update condition
-    #     result = await db["user_profiles"].update_one( # Commented out database update
-    #         {"_id": ObjectId(profile_id)}, # Commented out database update
-    #         {"$set": update_data} # Commented out database update
-    #     ) # Commented out database update
-    #     if result.modified_count == 1: # Commented out database update result
-    #         updated_profile = await db["user_profiles"].find_one({"_id": ObjectId(profile_id)}) # Commented out database update result
-    #         if updated_profile: # Commented out database update result
-    #             return UserProfile(**updated_profile) # Commented out database update result
+@bp.route("/<profile_id>", methods=['PUT'])
+def update_profile(profile_id):
+    if profile_id not in profiles_db:
+        return jsonify({"error": "Profile not found"}), 404
     
-    # existing_profile = await db["user_profiles"].find_one({"_id": ObjectId(profile_id)}) # Commented out database existence check
-    # if existing_profile: # Commented out database existence check
-    #     return UserProfile(**existing_profile) # Return existing data if no update occurred # Commented out database existence check
-    
-    if profile_id not in profiles_db: # In-memory check
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
-    
+    data = request.get_json()
     current_profile = profiles_db[profile_id]
     
-    # Use model_copy to apply updates while preserving Pydantic model integrity
-    updated_profile_instance = current_profile.model_copy(update=profile_update.model_dump(exclude_unset=True))
-    updated_profile_instance.updated_at = datetime.utcnow()
+    # Update fields if they exist in the request
+    for key, value in data.items():
+        if hasattr(current_profile, key):
+            setattr(current_profile, key, value)
     
-    profiles_db[profile_id] = updated_profile_instance
+    current_profile.updated_at = datetime.utcnow()
+    profiles_db[profile_id] = current_profile
+    
+    return jsonify(current_profile.to_dict())
 
-    return updated_profile_instance
-
-@router.delete("/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_profile(profile_id: str):
-    # db = get_database() # Commented out database access
-    # if not ObjectId.is_valid(profile_id): # Commented out ObjectId check
-    #     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid ObjectId format") # Commented out ObjectId check
-    # delete_result = await db["user_profiles"].delete_one({"_id": ObjectId(profile_id)}) # Commented out database delete
-    # if delete_result.deleted_count == 1: # Commented out database delete result
-    #     return # No content # Commented out database delete result
-    if profile_id not in profiles_db: # In-memory check
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
+@bp.route("/<profile_id>", methods=['DELETE'])
+def delete_profile(profile_id):
+    if profile_id not in profiles_db:
+        return jsonify({"error": "Profile not found"}), 404
     
     del profiles_db[profile_id]
-    return # No content 
+    return '', 204 
