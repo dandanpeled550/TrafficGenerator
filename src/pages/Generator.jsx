@@ -29,8 +29,18 @@ import {
   Infinity as InfinityIcon,
   BrainCircuit,
   Loader2,
-  Wand2
+  Wand2,
+  Trash2,
+  Zap
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from "@/components/ui/dialog";
 
 const DEFAULT_USER_AGENTS = [
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
@@ -96,6 +106,7 @@ export default function Generator() {
   });
   const [isCreating, setIsCreating] = useState(false);
   const [isSuggesting, setIsSuggesting] = useState(false);
+  const [runOnSubmit, setRunOnSubmit] = useState(false);
 
   useEffect(() => {
     fetchUserProfiles();
@@ -180,7 +191,7 @@ export default function Generator() {
         duration_minutes: runIndefinitely ? null : formData.duration_minutes,
         user_agents: DEFAULT_USER_AGENTS,
         referrers: DEFAULT_REFERRERS.organic.concat(DEFAULT_REFERRERS.social, DEFAULT_REFERRERS.referral),
-        status: "draft",
+        status: runOnSubmit ? "running" : "draft",
         profile_user_counts: profileUserCounts,
         total_profile_users: totalUsersFromProfiles,
         log_file_path: formData.config?.enable_logging !== false
@@ -511,6 +522,22 @@ export default function Generator() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Run Immediately Checkbox */}
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="runImmediately"
+                checked={runOnSubmit}
+                onCheckedChange={setRunOnSubmit}
+                className="border-slate-700 data-[state=checked]:bg-blue-500 data-[state=checked]:text-white"
+              />
+              <label
+                htmlFor="runImmediately"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-slate-300"
+              >
+                Run campaign immediately after creation
+              </label>
+            </div>
           </div>
         </div>
       </div>
