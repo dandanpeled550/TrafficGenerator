@@ -7,10 +7,10 @@ services:
       pip install -r requirements.txt
     startCommand: |
       cd backend
-      uvicorn app.main:app --host 0.0.0.0 --port $PORT
+      FLASK_APP=app.main flask run --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.0
+        value: 3.13.4
       - key: ENVIRONMENT
         value: production
       - key: CORS_ORIGINS
