@@ -2,107 +2,95 @@ from flask import Blueprint, request, jsonify
 from typing import List, Optional, Dict
 from datetime import datetime
 from dataclasses import dataclass, field
+import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint('profiles', __name__)
 
+# In-memory storage for profiles
+profiles: Dict[str, 'UserProfile'] = {}
+
 @dataclass
 class UserProfile:
-    # Required fields (no defaults)
     id: str
     name: str
-    created_at: datetime
-    updated_at: datetime
-    
-    # Optional fields with defaults
-    description: Optional[str] = None
-    user_agent: Optional[str] = None
-    geo_location: Optional[str] = None
-    device_type: Optional[str] = None
-    browser: Optional[str] = None
-    os: Optional[str] = None
-    referrer: Optional[str] = None
-    custom_headers: Dict[str, str] = field(default_factory=dict)
-    custom_cookies: Dict[str, str] = field(default_factory=dict)
-    custom_params: Dict[str, str] = field(default_factory=dict)
+    description: str
+    custom_params: Dict = field(default_factory=dict)
+    created_at: str = field(default_factory=lambda: str(uuid.uuid4()))
+    updated_at: str = field(default_factory=lambda: str(uuid.uuid4()))
 
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'name': self.name,
-            'description': self.description,
-            'user_agent': self.user_agent,
-            'geo_location': self.geo_location,
-            'device_type': self.device_type,
-            'browser': self.browser,
-            'os': self.os,
-            'referrer': self.referrer,
-            'custom_headers': self.custom_headers,
-            'custom_cookies': self.custom_cookies,
-            'custom_params': self.custom_params,
-            'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat()
-        }
-
-# In-memory storage for user profiles
-profiles_db: Dict[str, UserProfile] = {}
-
-@bp.route("/", methods=['POST'])
+@bp.route('/', methods=['POST'])
 def create_profile():
-    data = request.get_json()
-    profile_id = str(len(profiles_db) + 1)
-    
-    new_profile = UserProfile(
-        id=profile_id,
-        name=data['name'],
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        description=data.get('description'),
-        user_agent=data.get('user_agent'),
-        geo_location=data.get('geo_location'),
-        device_type=data.get('device_type'),
-        browser=data.get('browser'),
-        os=data.get('os'),
-        referrer=data.get('referrer'),
-        custom_headers=data.get('custom_headers', {}),
-        custom_cookies=data.get('custom_cookies', {}),
-        custom_params=data.get('custom_params', {})
-    )
-    
-    profiles_db[profile_id] = new_profile
-    return jsonify(new_profile.to_dict()), 201
+    try:
+        data = request.get_json()
+        logger.info(f"Creating profile with data: {data}")
+        
+        profile_id = str(uuid.uuid4())
+        profile = UserProfile(
+            id=profile_id,
+            name=data['name'],
+            description=data['description'],
+            custom_params=data.get('custom_params', {})
+        )
+        profiles[profile_id] = profile
+        logger.info(f"Created profile: {profile}")
+        return jsonify(profile.__dict__), 201
+    except Exception as e:
+        logger.error(f"Error creating profile: {str(e)}")
+        return jsonify({"error": str(e)}), 400
 
-@bp.route("/", methods=['GET'])
-def list_profiles():
-    return jsonify([profile.to_dict() for profile in profiles_db.values()])
+@bp.route('/', methods=['GET'])
+def get_profiles():
+    try:
+        logger.info("Fetching all profiles")
+        return jsonify([profile.__dict__ for profile in profiles.values()])
+    except Exception as e:
+        logger.error(f"Error fetching profiles: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
-@bp.route("/<profile_id>", methods=['GET'])
+@bp.route('/<profile_id>', methods=['GET'])
 def get_profile(profile_id):
-    if profile_id not in profiles_db:
-        return jsonify({"error": "Profile not found"}), 404
-    return jsonify(profiles_db[profile_id].to_dict())
+    try:
+        logger.info(f"Fetching profile: {profile_id}")
+        if profile_id not in profiles:
+            return jsonify({"error": "Profile not found"}), 404
+        return jsonify(profiles[profile_id].__dict__)
+    except Exception as e:
+        logger.error(f"Error fetching profile: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
-@bp.route("/<profile_id>", methods=['PUT'])
+@bp.route('/<profile_id>', methods=['PUT'])
 def update_profile(profile_id):
-    if profile_id not in profiles_db:
-        return jsonify({"error": "Profile not found"}), 404
-    
-    data = request.get_json()
-    current_profile = profiles_db[profile_id]
-    
-    # Update fields if they exist in the request
-    for key, value in data.items():
-        if hasattr(current_profile, key):
-            setattr(current_profile, key, value)
-    
-    current_profile.updated_at = datetime.utcnow()
-    profiles_db[profile_id] = current_profile
-    
-    return jsonify(current_profile.to_dict())
+    try:
+        if profile_id not in profiles:
+            return jsonify({"error": "Profile not found"}), 404
+        
+        data = request.get_json()
+        logger.info(f"Updating profile {profile_id} with data: {data}")
+        
+        profile = profiles[profile_id]
+        profile.name = data.get('name', profile.name)
+        profile.description = data.get('description', profile.description)
+        profile.custom_params = data.get('custom_params', profile.custom_params)
+        profile.updated_at = str(uuid.uuid4())
+        
+        logger.info(f"Updated profile: {profile}")
+        return jsonify(profile.__dict__)
+    except Exception as e:
+        logger.error(f"Error updating profile: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
-@bp.route("/<profile_id>", methods=['DELETE'])
+@bp.route('/<profile_id>', methods=['DELETE'])
 def delete_profile(profile_id):
-    if profile_id not in profiles_db:
-        return jsonify({"error": "Profile not found"}), 404
-    
-    del profiles_db[profile_id]
-    return '', 204 
+    try:
+        logger.info(f"Deleting profile: {profile_id}")
+        if profile_id not in profiles:
+            return jsonify({"error": "Profile not found"}), 404
+        
+        del profiles[profile_id]
+        return jsonify({"message": "Profile deleted successfully"})
+    except Exception as e:
+        logger.error(f"Error deleting profile: {str(e)}")
+        return jsonify({"error": str(e)}), 500 
