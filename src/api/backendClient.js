@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || "https://trafficgenerator-1.onrender.com";
+const API_URL = import.meta.env.VITE_API_URL || "https://trafficgenerator-hz4s.onrender.com";
 
 // Log the API URL being used
 console.log('Using API URL:', API_URL);
