@@ -32,7 +32,7 @@ logger.addHandler(file_handler)
 app = Flask(__name__)
 
 # Get CORS origins from environment variable
-cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,https://traffic-generator-frontend.onrender.com,https://trafficgenerator-hz4s.onrender.com").split(",")
+cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,https://trafficgenerator-1.onrender.com").split(",")
 logger.info(f"Configured CORS origins: {cors_origins}")
 
 # Configure CORS with more detailed options
