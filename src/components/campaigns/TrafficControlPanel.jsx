@@ -16,13 +16,13 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
     const rtbConfig = campaign.rtb_config || {};
     const config = campaign.config || {};
     
+    // Only include fields that are needed for traffic generation
     return {
       campaign_id: campaign.id,
       target_url: campaign.target_url,
       requests_per_minute: campaign.requests_per_minute || 10,
       duration_minutes: campaign.duration_minutes || 60,
       geo_locations: campaign.geo_locations || ['United States'],
-      log_file_path: `logs/campaign_${Date.now()}_${campaign.name.replace(/[^a-zA-Z0-9]/g, '_')}.csv`,
       rtb_config: {
         device_brand: rtbConfig.device_brand || 'samsung',
         device_models: rtbConfig.device_models || ['Galaxy S24'],
@@ -102,14 +102,12 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
   };
 
   const startTrafficGeneration = async (config) => {
-    // Simulate backend traffic generation
     try {
-      // This would normally call a backend function, but we'll simulate it
       console.log('Starting traffic generation with config:', config);
-      
-      // For now, we'll simulate the start
-      return { success: true };
+      const response = await backendClient.traffic.generate(config);
+      return { success: true, data: response };
     } catch (error) {
+      console.error('Error starting traffic generation:', error);
       return { success: false, error: error.message };
     }
   };

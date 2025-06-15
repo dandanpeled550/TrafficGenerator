@@ -1,91 +1,227 @@
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
+// Log the API URL being used
+console.log('Using API URL:', import.meta.env.VITE_API_URL);
+
+const handleResponse = async (response) => {
+  const data = await response.json();
+  console.log('API Response:', {
+    status: response.status,
+    data: data
+  });
+
+  if (!response.ok) {
+    const error = new Error(data.message || 'API request failed');
+    error.status = response.status;
+    error.data = data;
+    throw error;
+  }
+
+  return data;
+};
+
+const defaultHeaders = {
+  "Content-Type": "application/json",
+  "Accept": "application/json",
+};
 
 const backendClient = {
   // Traffic Endpoints
   traffic: {
     generate: async (config) => {
-      const response = await fetch(`${API_URL}/api/traffic/generate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(config),
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Failed to generate traffic");
+      try {
+        console.log('Starting traffic generation with config:', config);
+        const response = await fetch('/api/traffic/generate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(config),
+        });
+        return await handleResponse(response);
+      } catch (error) {
+        console.error('Error generating traffic:', error);
+        throw error;
       }
-      return response.json();
     },
-    getAllGenerated: async () => {
-      const response = await fetch(`${API_URL}/api/traffic/generated`);
-      if (!response.ok) {
-        throw new Error("Failed to fetch all generated traffic");
+    stop: async (campaignId) => {
+      try {
+        console.log('Stopping traffic generation for campaign:', campaignId);
+        const response = await fetch(`/api/traffic/stop/${campaignId}`, {
+          method: 'POST',
+        });
+        return await handleResponse(response);
+      } catch (error) {
+        console.error('Error stopping traffic generation:', error);
+        throw error;
       }
-      return response.json();
     },
-    getCampaignGenerated: async (campaignId) => {
-      const response = await fetch(`${API_URL}/api/traffic/generated/${campaignId}`);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch traffic for campaign ${campaignId}`);
+    getStatus: async (campaignId) => {
+      try {
+        console.log('Getting status for campaign:', campaignId);
+        const response = await fetch(`/api/traffic/status/${campaignId}`);
+        return await handleResponse(response);
+      } catch (error) {
+        console.error('Error getting campaign status:', error);
+        throw error;
       }
-      return response.json();
     },
+    getGenerated: async (campaignId = null) => {
+      try {
+        const url = campaignId 
+          ? `/api/traffic/generated/${campaignId}`
+          : '/api/traffic/generated';
+        console.log('Fetching generated traffic:', url);
+        const response = await fetch(url);
+        return await handleResponse(response);
+      } catch (error) {
+        console.error('Error fetching generated traffic:', error);
+        throw error;
+      }
+    },
+    getStats: async (campaignId) => {
+      try {
+        console.log('Getting stats for campaign:', campaignId);
+        const response = await fetch(`/api/traffic/stats/${campaignId}`);
+        return await handleResponse(response);
+      } catch (error) {
+        console.error('Error getting campaign stats:', error);
+        throw error;
+      }
+    },
+    checkHealth: async () => {
+      try {
+        console.log('Checking backend health');
+        const response = await fetch('/api/traffic/health');
+        return await handleResponse(response);
+      } catch (error) {
+        console.error('Error checking backend health:', error);
+        throw error;
+      }
+    }
   },
 
   // Session Endpoints
   sessions: {
     list: async () => {
-      const response = await fetch(`${API_URL}/api/sessions/`);
-      if (!response.ok) {
-        throw new Error("Failed to list sessions");
+      console.log('Fetching all sessions');
+      try {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/`, {
+          headers: defaultHeaders,
+          credentials: "include",
+        });
+        return handleResponse(response);
+      } catch (error) {
+        console.error('Failed to fetch sessions:', error);
+        return []; // Return empty array instead of throwing
       }
-      return response.json();
     },
     get: async (sessionId) => {
-      const response = await fetch(`${API_URL}/api/sessions/${sessionId}`);
-      if (!response.ok) {
-        throw new Error(`Failed to get session ${sessionId}`);
-      }
-      return response.json();
+      console.log('Fetching session:', sessionId);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/${sessionId}`, {
+        headers: defaultHeaders,
+        credentials: "include",
+      });
+      return handleResponse(response);
     },
     create: async (sessionData) => {
-      const response = await fetch(`${API_URL}/api/sessions/`, {
+      console.log('Creating session:', sessionData);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: defaultHeaders,
         body: JSON.stringify(sessionData),
+        credentials: "include",
       });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Failed to create session");
-      }
-      return response.json();
+      return handleResponse(response);
     },
     update: async (sessionId, updateData) => {
-      const response = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
+      console.log('Updating session:', sessionId, updateData);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/${sessionId}`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: defaultHeaders,
         body: JSON.stringify(updateData),
+        credentials: "include",
       });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || "Failed to update session");
-      }
-      return response.json();
+      return handleResponse(response);
     },
     delete: async (sessionId) => {
-      const response = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
+      console.log('Deleting session:', sessionId);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/${sessionId}`, {
         method: "DELETE",
+        headers: defaultHeaders,
+        credentials: "include",
       });
-      if (!response.ok) {
-        throw new Error(`Failed to delete session ${sessionId}`);
-      }
-      return response.json();
+      return handleResponse(response);
     },
+  },
+
+  // Profile Endpoints
+  profiles: {
+    list: async () => {
+      console.log('Fetching all profiles');
+      try {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/profiles/`, {
+          headers: defaultHeaders,
+          credentials: "include",
+        });
+        return handleResponse(response);
+      } catch (error) {
+        console.error('Failed to fetch profiles:', error);
+        return []; // Return empty array instead of throwing
+      }
+    },
+    get: async (profileId) => {
+      console.log('Fetching profile:', profileId);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/profiles/${profileId}`, {
+        headers: defaultHeaders,
+        credentials: "include",
+      });
+      return handleResponse(response);
+    },
+    create: async (profileData) => {
+      console.log('Creating profile:', profileData);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/profiles/`, {
+        method: "POST",
+        headers: defaultHeaders,
+        body: JSON.stringify(profileData),
+        credentials: "include",
+      });
+      return handleResponse(response);
+    },
+    update: async (profileId, updateData) => {
+      console.log('Updating profile:', profileId, updateData);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/profiles/${profileId}`, {
+        method: "PUT",
+        headers: defaultHeaders,
+        body: JSON.stringify(updateData),
+        credentials: "include",
+      });
+      return handleResponse(response);
+    },
+    delete: async (profileId) => {
+      console.log('Deleting profile:', profileId);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/profiles/${profileId}`, {
+        method: "DELETE",
+        headers: defaultHeaders,
+        credentials: "include",
+      });
+      return handleResponse(response);
+    },
+  },
+
+  // Connection check endpoint
+  checkConnection: async () => {
+    console.log('Checking connection to backend...');
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/health`, {
+        headers: defaultHeaders,
+        credentials: "include",
+      });
+      const data = await handleResponse(response);
+      console.log("Connection check response:", data);
+      return data;
+    } catch (error) {
+      console.error('Connection check failed:', error);
+      throw new Error(`Failed to connect to backend: ${error.message}`);
+    }
   },
 };
 

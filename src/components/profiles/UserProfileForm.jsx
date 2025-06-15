@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -157,8 +156,8 @@ export default function UserProfileForm({ initialProfile, onSubmit, onCancel, is
         <CardHeader><CardTitle className="text-xl">Basic Information</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <Label htmlFor="profile_name" className="text-slate-300 font-semibold">Profile Name</Label>
-            <Input id="profile_name" value={profile.profile_name} onChange={e => handleChange('profile_name', e.target.value)} required className="bg-slate-800/50 border-slate-700 text-white placeholder-slate-400" />
+            <Label htmlFor="name" className="text-slate-300 font-semibold">Profile Name</Label>
+            <Input id="name" value={profile.name} onChange={e => handleChange('name', e.target.value)} required className="bg-slate-800/50 border-slate-700 text-white placeholder-slate-400" />
           </div>
           <div>
             <Label htmlFor="description" className="text-slate-300 font-semibold">Description</Label>

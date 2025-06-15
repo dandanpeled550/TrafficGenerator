@@ -56,9 +56,12 @@ export default function CampaignsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [campaignToDelete, setCampaignToDelete] = useState(null);
   const [lastRefreshed, setLastRefreshed] = useState(null);
+  const [allProfiles, setAllProfiles] = useState([]);
 
   useEffect(() => {
     loadData();
+    // Load all profiles for name resolution
+    backendClient.profiles.list().then(setAllProfiles).catch(console.error);
   }, []);
 
   // Effect for auto-refresh based on running campaigns
@@ -167,6 +170,16 @@ export default function CampaignsPage() {
       default:
         return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
     }
+  };
+
+  const getProfileNames = (profileIds) => {
+    if (!profileIds || !profileIds.length) return "No profiles selected";
+    return profileIds
+      .map(id => {
+        const profile = allProfiles.find(p => p.id === id);
+        return profile ? profile.name : `Unknown Profile (${id})`;
+      })
+      .join(", ");
   };
 
   const filteredCampaigns = campaigns.filter(campaign => {

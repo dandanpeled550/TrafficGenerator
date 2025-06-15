@@ -1,21 +1,21 @@
 services:
   - type: web
-    name: traffic-generator-api
+    name: TrafficGenerator
     env: python
     buildCommand: |
       cd backend
       pip install -r requirements.txt
     startCommand: |
       cd backend
-      uvicorn app.main:app --host 0.0.0.0 --port $PORT
+      FLASK_APP=app.main flask run --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: 3.11.0
+        value: 3.13.4
       - key: ENVIRONMENT
         value: production
       - key: CORS_ORIGINS
-        value: https://traffic-generator-frontend.onrender.com
-
+        value: https://trafficgenerator-1.onrender.com
+        
   - type: web
     name: traffic-generator-frontend
     env: node
@@ -28,4 +28,4 @@ services:
       - key: NODE_VERSION
         value: 18.0.0
       - key: VITE_API_URL
-        value: https://traffic-generator-api.onrender.com 
+        value: https://trafficgenerator-hz4s.onrender.com
