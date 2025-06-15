@@ -54,15 +54,15 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
           requests_per_minute: campaign.requests_per_minute || 10,
           duration_minutes: campaign.duration_minutes || 60,
           geo_locations: campaign.geo_locations || ['United States'],
-          rtb_config: campaign.rtb_config || {
+          rtb_config: {
             device_brand: 'samsung',
-            device_models: ['Galaxy S24'],
-            ad_formats: ['banner'],
-            app_categories: ['IAB9'],
+            device_models: ['Galaxy S24', 'iPhone 15', 'Pixel 8'],
+            ad_formats: ['banner', 'interstitial', 'native'],
+            app_categories: ['IAB9', 'IAB1', 'IAB2'],
             generate_adid: true,
             simulate_bid_requests: true
           },
-          config: campaign.config || {
+          config: {
             randomize_timing: true,
             follow_redirects: true,
             simulate_browsing: false,
@@ -100,19 +100,6 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
         }
 
         console.log(`[Injector] Processing ${trafficData.length} traffic entries for campaign ${campaign.id}`);
-
-        // 1. Save new logs to the database
-        try {
-            console.log(`[Injector] Saving traffic data to database for campaign ${campaign.id}`);
-            await backendClient.logs.bulkCreate(trafficData);
-            console.log(`[Injector] Successfully saved traffic data to database`);
-        } catch (error) {
-            console.error(`[Injector] Failed to save traffic data to database: ${error.message}`);
-            setError(`Failed to save traffic data: ${error.message}`);
-            clearInterval(intervalRef.current);
-            setIsInjecting(false);
-            return;
-        }
 
         // 2. Fetch the latest campaign data
         console.log(`[Injector] Fetching current campaign data for ${campaign.id}`);
