@@ -196,15 +196,19 @@ def generate_traffic():
         thread.start()
         
         logger.info(f"Successfully started traffic generation for campaign {config.campaign_id}")
-        return jsonify({
+        response_data = {
             "success": True,
             "message": "Traffic generation started",
             "data": {
                 "campaign_id": config.campaign_id,
                 "requests_per_minute": config.requests_per_minute,
-                "duration_minutes": config.duration_minutes
+                "duration_minutes": config.duration_minutes,
+                "status": "running",
+                "start_time": datetime.utcnow().isoformat()
             }
-        })
+        }
+        logger.debug(f"Sending response: {json.dumps(response_data, indent=2)}")
+        return jsonify(response_data)
     except Exception as e:
         logger.error(f"Error generating traffic: {str(e)}", exc_info=True)
         return jsonify({
