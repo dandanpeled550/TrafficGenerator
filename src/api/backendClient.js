@@ -1,7 +1,5 @@
-const API_URL = import.meta.env.VITE_API_URL || "https://trafficgenerator-hz4s.onrender.com";
-
 // Log the API URL being used
-console.log('Using API URL:', API_URL);
+console.log('Using API URL:', import.meta.env.VITE_API_URL);
 
 const defaultHeaders = {
   "Content-Type": "application/json",
@@ -27,7 +25,7 @@ const backendClient = {
   traffic: {
     generate: async (config) => {
       console.log('Generating traffic with params:', config);
-      const response = await fetch(`${API_URL}/api/traffic/generate`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/traffic/generate`, {
         method: "POST",
         headers: defaultHeaders,
         body: JSON.stringify(config),
@@ -37,7 +35,7 @@ const backendClient = {
     },
     getAllGenerated: async () => {
       console.log('Fetching all generated traffic');
-      const response = await fetch(`${API_URL}/api/traffic/generated`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/traffic/generated`, {
         headers: defaultHeaders,
         credentials: "include",
       });
@@ -45,7 +43,7 @@ const backendClient = {
     },
     getCampaignGenerated: async (campaignId) => {
       console.log('Fetching generated traffic for campaign:', campaignId);
-      const response = await fetch(`${API_URL}/api/traffic/generated/${campaignId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/traffic/generated/${campaignId}`, {
         headers: defaultHeaders,
         credentials: "include",
       });
@@ -53,7 +51,7 @@ const backendClient = {
     },
     getCampaignStats: async (campaignId) => {
       console.log('Fetching stats for campaign:', campaignId);
-      const response = await fetch(`${API_URL}/api/traffic/stats/${campaignId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/traffic/stats/${campaignId}`, {
         headers: defaultHeaders,
         credentials: "include",
       });
@@ -65,7 +63,7 @@ const backendClient = {
   sessions: {
     list: async () => {
       console.log('Fetching all sessions');
-      const response = await fetch(`${API_URL}/api/sessions/`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/`, {
         headers: defaultHeaders,
         credentials: "include",
       });
@@ -73,7 +71,7 @@ const backendClient = {
     },
     get: async (sessionId) => {
       console.log('Fetching session:', sessionId);
-      const response = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/${sessionId}`, {
         headers: defaultHeaders,
         credentials: "include",
       });
@@ -81,7 +79,7 @@ const backendClient = {
     },
     create: async (sessionData) => {
       console.log('Creating session:', sessionData);
-      const response = await fetch(`${API_URL}/api/sessions/`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/`, {
         method: "POST",
         headers: defaultHeaders,
         body: JSON.stringify(sessionData),
@@ -91,7 +89,7 @@ const backendClient = {
     },
     update: async (sessionId, updateData) => {
       console.log('Updating session:', sessionId, updateData);
-      const response = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/${sessionId}`, {
         method: "PUT",
         headers: defaultHeaders,
         body: JSON.stringify(updateData),
@@ -101,7 +99,7 @@ const backendClient = {
     },
     delete: async (sessionId) => {
       console.log('Deleting session:', sessionId);
-      const response = await fetch(`${API_URL}/api/sessions/${sessionId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/${sessionId}`, {
         method: "DELETE",
         headers: defaultHeaders,
         credentials: "include",
@@ -114,7 +112,7 @@ const backendClient = {
   checkConnection: async () => {
     console.log('Checking connection to backend...');
     try {
-      const response = await fetch(`${API_URL}/api/health`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/health`, {
         headers: defaultHeaders,
         credentials: "include",
       });
