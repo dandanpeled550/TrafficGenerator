@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: traffic-generator-api
+    name: TrafficGenerator
     env: python
     buildCommand: |
       cd backend
