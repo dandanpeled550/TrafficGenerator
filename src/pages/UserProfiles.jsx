@@ -203,7 +203,7 @@ export default function UserProfilesPage() {
         )}
 
         {showDeleteConfirm && (
-          <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+          <Dialog open={showDeleteConfirm} onOpenChange={(open) => !open && setShowDeleteConfirm(false)}>
             <DialogContent className="bg-slate-900 border-slate-800 text-slate-200">
               <DialogHeader>
                 <DialogTitle className="text-xl font-bold text-white">Confirm Delete</DialogTitle>
@@ -211,11 +211,31 @@ export default function UserProfilesPage() {
                   Are you sure you want to delete the profile "{profileToDelete?.name}"? This action cannot be undone.
                 </DialogDescription>
               </DialogHeader>
-              <DialogFooter className="gap-2">
-                <Button variant="outline" onClick={() => setShowDeleteConfirm(false)} className="border-slate-700 hover:bg-slate-800">Cancel</Button>
-                <Button variant="destructive" onClick={handleDeleteProfile} disabled={isSubmitting}>
-                  {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Trash2 className="w-4 h-4 mr-2" />}
-                  Delete
+              <DialogFooter className="flex justify-end gap-2 mt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="border-slate-700 hover:bg-slate-800 text-slate-300"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteProfile}
+                  disabled={isSubmitting}
+                  className="bg-red-700/50 hover:bg-red-600/50 border border-red-600/50 text-red-300 hover:text-red-200"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete Profile
+                    </>
+                  )}
                 </Button>
               </DialogFooter>
             </DialogContent>
