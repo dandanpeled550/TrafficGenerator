@@ -42,12 +42,30 @@ class TrafficConfig:
     rtb_config: Optional[Dict[str, Any]] = None
     config: Optional[Dict[str, Any]] = None
     user_profiles: List[Dict[str, Any]] = None
+    log_file_path: Optional[str] = None
+    status: str = "draft"
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    total_requests: int = 0
+    successful_requests: int = 0
+    last_activity_time: Optional[datetime] = None
+    progress_percentage: float = 0.0
 
     def __post_init__(self):
         if self.geo_locations is None:
             self.geo_locations = ["United States"]
         if self.user_profiles is None:
             self.user_profiles = []
+        if self.rtb_config is None:
+            self.rtb_config = {}
+        if self.config is None:
+            self.config = {}
+        if self.created_at is None:
+            self.created_at = datetime.utcnow()
+        if self.updated_at is None:
+            self.updated_at = datetime.utcnow()
 
 def generate_traffic_background(config: TrafficConfig):
     """Background task to generate traffic"""
@@ -83,7 +101,18 @@ def generate_traffic_background(config: TrafficConfig):
 def generate_traffic():
     try:
         data = request.get_json()
-        config = TrafficConfig(**data)
+        
+        # Remove any fields that aren't part of TrafficConfig
+        valid_fields = {
+            'campaign_id', 'target_url', 'requests_per_minute', 'duration_minutes',
+            'geo_locations', 'rtb_config', 'config', 'user_profiles', 'log_file_path',
+            'status', 'created_at', 'updated_at', 'start_time', 'end_time',
+            'total_requests', 'successful_requests', 'last_activity_time',
+            'progress_percentage'
+        }
+        filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+        
+        config = TrafficConfig(**filtered_data)
 
         # Validate configuration
         if config.requests_per_minute <= 0:
@@ -109,6 +138,7 @@ def generate_traffic():
             "data": {"campaign_id": config.campaign_id}
         })
     except Exception as e:
+        logger.error(f"Error generating traffic: {str(e)}")
         return jsonify({
             "success": False,
             "message": str(e)
