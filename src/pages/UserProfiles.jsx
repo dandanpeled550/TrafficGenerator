@@ -93,7 +93,7 @@ export default function UserProfilesPage() {
   };
 
   const filteredProfiles = profiles.filter(profile =>
-    profile.profile_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    profile.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (profile.description && profile.description.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
@@ -206,9 +206,9 @@ export default function UserProfilesPage() {
           <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
             <DialogContent className="bg-slate-900 border-slate-800 text-slate-200">
               <DialogHeader>
-                <DialogTitle className="text-xl text-white">Confirm Deletion</DialogTitle>
+                <DialogTitle className="text-xl font-bold text-white">Confirm Delete</DialogTitle>
                 <DialogDescription className="text-slate-400">
-                  Are you sure you want to delete the profile "{profileToDelete?.profile_name}"? This action cannot be undone.
+                  Are you sure you want to delete the profile "{profileToDelete?.name}"? This action cannot be undone.
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter className="gap-2">

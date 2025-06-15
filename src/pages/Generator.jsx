@@ -440,7 +440,12 @@ export default function Generator() {
                               className="border-slate-600 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
                             />
                             <div>
-                              <Label htmlFor={`profile-${profile.id}`} className="text-slate-200 font-medium cursor-pointer block">{profile.profile_name}</Label>
+                              <Label
+                                htmlFor={`profile-${profile.id}`}
+                                className="text-slate-300 font-medium cursor-pointer block"
+                              >
+                                {profile.name}
+                              </Label>
                               <p className="text-xs text-slate-400">
                                 {profile.demographics?.age_group || 'Any age'} • {profile.demographics?.gender || 'Any gender'}
                               </p>
