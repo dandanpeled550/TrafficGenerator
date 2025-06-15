@@ -102,14 +102,12 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
   };
 
   const startTrafficGeneration = async (config) => {
-    // Simulate backend traffic generation
     try {
-      // This would normally call a backend function, but we'll simulate it
       console.log('Starting traffic generation with config:', config);
-      
-      // For now, we'll simulate the start
-      return { success: true };
+      const response = await backendClient.traffic.generate(config);
+      return { success: true, data: response };
     } catch (error) {
+      console.error('Error starting traffic generation:', error);
       return { success: false, error: error.message };
     }
   };
