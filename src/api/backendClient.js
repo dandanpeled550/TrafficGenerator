@@ -1,23 +1,19 @@
 // Log the API URL being used
 console.log('Using API URL:', import.meta.env.VITE_API_URL);
 
+const handleResponse = async (response) => {
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    const errorMessage = errorData.error || errorData.message || 'Unknown error occurred';
+    console.error('API Error:', errorMessage);
+    throw new Error(errorMessage);
+  }
+  return response.json();
+};
+
 const defaultHeaders = {
   "Content-Type": "application/json",
   "Accept": "application/json",
-};
-
-const handleResponse = async (response) => {
-  console.log('Response status:', response.status);
-  console.log('Response headers:', response.headers);
-  
-  const data = await response.json();
-  console.log('Response data:', data);
-  
-  if (!response.ok) {
-    console.error('API Error:', data);
-    throw new Error(data.error || 'API request failed');
-  }
-  return data;
 };
 
 const backendClient = {
@@ -63,11 +59,16 @@ const backendClient = {
   sessions: {
     list: async () => {
       console.log('Fetching all sessions');
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/`, {
-        headers: defaultHeaders,
-        credentials: "include",
-      });
-      return handleResponse(response);
+      try {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/`, {
+          headers: defaultHeaders,
+          credentials: "include",
+        });
+        return handleResponse(response);
+      } catch (error) {
+        console.error('Failed to fetch sessions:', error);
+        return []; // Return empty array instead of throwing
+      }
     },
     get: async (sessionId) => {
       console.log('Fetching session:', sessionId);
@@ -112,11 +113,16 @@ const backendClient = {
   profiles: {
     list: async () => {
       console.log('Fetching all profiles');
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/profiles/`, {
-        headers: defaultHeaders,
-        credentials: "include",
-      });
-      return handleResponse(response);
+      try {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/profiles/`, {
+          headers: defaultHeaders,
+          credentials: "include",
+        });
+        return handleResponse(response);
+      } catch (error) {
+        console.error('Failed to fetch profiles:', error);
+        return []; // Return empty array instead of throwing
+      }
     },
     get: async (profileId) => {
       console.log('Fetching profile:', profileId);
