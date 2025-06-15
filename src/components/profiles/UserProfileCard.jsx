@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +22,7 @@ export default function UserProfileCard({ profile, onEdit, onDelete }) {
       <CardHeader className="border-b border-slate-800 pb-4">
         <div className="flex justify-between items-start">
           <div>
-            <CardTitle className="text-xl font-bold text-white mb-1">{profile.profile_name}</CardTitle>
+            <CardTitle className="text-xl font-bold text-white mb-1">{profile.name}</CardTitle>
             <p className="text-xs text-slate-400 italic">{profile.description || "No description"}</p>
           </div>
           <User className="w-8 h-8 text-blue-400 p-1.5 bg-blue-500/10 rounded-lg" />

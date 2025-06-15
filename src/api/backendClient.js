@@ -108,6 +108,55 @@ const backendClient = {
     },
   },
 
+  // Profile Endpoints
+  profiles: {
+    list: async () => {
+      console.log('Fetching all profiles');
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/profiles/`, {
+        headers: defaultHeaders,
+        credentials: "include",
+      });
+      return handleResponse(response);
+    },
+    get: async (profileId) => {
+      console.log('Fetching profile:', profileId);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/profiles/${profileId}`, {
+        headers: defaultHeaders,
+        credentials: "include",
+      });
+      return handleResponse(response);
+    },
+    create: async (profileData) => {
+      console.log('Creating profile:', profileData);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/profiles/`, {
+        method: "POST",
+        headers: defaultHeaders,
+        body: JSON.stringify(profileData),
+        credentials: "include",
+      });
+      return handleResponse(response);
+    },
+    update: async (profileId, updateData) => {
+      console.log('Updating profile:', profileId, updateData);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/profiles/${profileId}`, {
+        method: "PUT",
+        headers: defaultHeaders,
+        body: JSON.stringify(updateData),
+        credentials: "include",
+      });
+      return handleResponse(response);
+    },
+    delete: async (profileId) => {
+      console.log('Deleting profile:', profileId);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/profiles/${profileId}`, {
+        method: "DELETE",
+        headers: defaultHeaders,
+        credentials: "include",
+      });
+      return handleResponse(response);
+    },
+  },
+
   // Connection check endpoint
   checkConnection: async () => {
     console.log('Checking connection to backend...');
