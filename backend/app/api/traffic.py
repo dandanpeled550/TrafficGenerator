@@ -76,30 +76,54 @@ def generate_traffic_background(config: TrafficConfig):
     start_time = time.time()
     request_count = 0
     
+    logger.info(f"Starting traffic generation for campaign {config.campaign_id}")
+    logger.info(f"Configuration: requests_per_minute={config.requests_per_minute}, duration_minutes={config.duration_minutes}")
+    
     while True:
         # Check if we should stop
         if config.duration_minutes and (time.time() - start_time) > (config.duration_minutes * 60):
+            logger.info(f"Traffic generation completed for campaign {config.campaign_id}. Duration limit reached.")
             break
             
         # Generate traffic batch
         batch_size = min(config.requests_per_minute, 10)  # Process in smaller batches
-        for _ in range(batch_size):
+        logger.debug(f"Generating batch of {batch_size} requests for campaign {config.campaign_id}")
+        
+        for i in range(batch_size):
             try:
                 # Generate traffic data
                 traffic_data = generate_traffic_data(config)
+                logger.debug(f"Generated traffic data for request {i+1}/{batch_size}: {traffic_data}")
                 
                 # Simulate request
-                simulate_request(traffic_data)
+                response_data = simulate_request(traffic_data)
+                logger.debug(f"Simulated request response: {response_data}")
                 
-                append_traffic_to_file(config.campaign_id, traffic_data)
+                # Save to file
+                append_traffic_to_file(config.campaign_id, response_data)
+                logger.debug(f"Saved traffic data to file for campaign {config.campaign_id}")
                 
                 request_count += 1
                 
             except Exception as e:
-                print(f"Error generating traffic: {str(e)}")
+                logger.error(f"Error generating traffic for campaign {config.campaign_id}: {str(e)}", exc_info=True)
+        
+        # Update campaign status
+        try:
+            status_data = {
+                "total_requests": request_count,
+                "elapsed_time": time.time() - start_time,
+                "requests_per_minute": request_count / ((time.time() - start_time) / 60)
+            }
+            update_campaign_status(config.campaign_id, "running", status_data)
+            logger.info(f"Updated campaign status for {config.campaign_id}: {status_data}")
+        except Exception as e:
+            logger.error(f"Error updating campaign status: {str(e)}", exc_info=True)
         
         # Wait for next batch
-        time.sleep(60 / config.requests_per_minute)
+        sleep_time = 60 / config.requests_per_minute
+        logger.debug(f"Waiting {sleep_time:.2f} seconds before next batch")
+        time.sleep(sleep_time)
 
 @bp.route("/generate", methods=['POST'])
 def generate_traffic():
@@ -123,6 +147,7 @@ def generate_traffic():
             'progress_percentage'
         }
         filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+        logger.debug(f"Filtered configuration data: {filtered_data}")
         
         # Validate required fields
         required_fields = ['campaign_id', 'target_url']
@@ -136,8 +161,9 @@ def generate_traffic():
         
         try:
             config = TrafficConfig(**filtered_data)
+            logger.info(f"Created TrafficConfig object: {config}")
         except Exception as e:
-            logger.error(f"Error creating TrafficConfig: {str(e)}")
+            logger.error(f"Error creating TrafficConfig: {str(e)}", exc_info=True)
             return jsonify({
                 "success": False,
                 "message": f"Invalid configuration: {str(e)}"
@@ -163,7 +189,7 @@ def generate_traffic():
         thread.daemon = True
         thread.start()
         
-        logger.info(f"Started traffic generation for campaign {config.campaign_id}")
+        logger.info(f"Started traffic generation thread for campaign {config.campaign_id}")
         return jsonify({
             "success": True,
             "message": "Traffic generation started",
@@ -178,7 +204,8 @@ def generate_traffic():
 
 def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
     """Generate traffic data based on configuration"""
-    return {
+    logger.debug(f"Generating traffic data for campaign {config.campaign_id}")
+    traffic_data = {
         "timestamp": datetime.utcnow().isoformat(),
         "campaign_id": config.campaign_id,
         "target_url": config.target_url,
@@ -190,6 +217,8 @@ def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
         ]),
         "rtb_data": generate_rtb_data(config.rtb_config) if config.rtb_config else None
     }
+    logger.debug(f"Generated traffic data: {traffic_data}")
+    return traffic_data
 
 def generate_rtb_data(rtb_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Generate RTB data if RTB configuration is provided"""
@@ -211,11 +240,16 @@ def generate_adid() -> str:
 def simulate_request(traffic_data: Dict[str, Any]) -> Dict[str, Any]:
     """Simulate making a request with the generated traffic data"""
     try:
+        logger.debug(f"Simulating request for traffic data: {traffic_data}")
+        
         # Simulate network latency (50-500ms)
-        time.sleep(random.uniform(0.05, 0.5))
+        latency = random.uniform(0.05, 0.5)
+        logger.debug(f"Simulated network latency: {latency:.3f}s")
+        time.sleep(latency)
         
         # Simulate success rate (85% success)
         success = random.random() < 0.85
+        logger.debug(f"Request success: {success}")
         
         # Add response data
         response_data = {
@@ -227,13 +261,15 @@ def simulate_request(traffic_data: Dict[str, Any]) -> Dict[str, Any]:
             "win_price": round(random.uniform(0.1, 5.0), 2) if success and traffic_data.get('rtb_data') else None,
             "currency": "USD" if success and traffic_data.get('rtb_data') else None
         }
+        logger.debug(f"Generated response data: {response_data}")
         
         # Merge response data with traffic data
         traffic_data.update(response_data)
+        logger.debug(f"Final traffic data with response: {traffic_data}")
         
         return traffic_data
     except Exception as e:
-        logger.error(f"Error simulating request: {str(e)}")
+        logger.error(f"Error simulating request: {str(e)}", exc_info=True)
         traffic_data.update({
             "success": False,
             "error": str(e),
