@@ -21,13 +21,25 @@ const backendClient = {
   traffic: {
     generate: async (config) => {
       console.log('Generating traffic with params:', config);
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/traffic/generate`, {
-        method: "POST",
-        headers: defaultHeaders,
-        body: JSON.stringify(config),
-        credentials: "include",
-      });
-      return handleResponse(response);
+      try {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/traffic/generate`, {
+          method: "POST",
+          headers: defaultHeaders,
+          body: JSON.stringify(config),
+          credentials: "include",
+        });
+        const data = await handleResponse(response);
+        if (!data.success) {
+          throw new Error(data.message || 'Failed to generate traffic');
+        }
+        return data;
+      } catch (error) {
+        console.error('Traffic generation error:', error);
+        return {
+          success: false,
+          message: error.message
+        };
+      }
     },
     getAllGenerated: async () => {
       console.log('Fetching all generated traffic');

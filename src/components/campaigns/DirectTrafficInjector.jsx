@@ -26,17 +26,26 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
   const startTrafficGeneration = async () => {
     setIsInjecting(true);
     setError(null);
-    console.log(`[Injector] Starting backend traffic generation for campaign: ${campaign.name}`);
+    console.log(`[Injector] Starting backend traffic generation for campaign: ${campaign.name} (ID: ${campaign.id})`);
 
     // Update campaign status immediately
-    await backendClient.sessions.update(campaign.id, {
-      status: 'running',
-      start_time: new Date().toISOString(),
-    });
+    try {
+      console.log(`[Injector] Updating campaign status to 'running' for campaign: ${campaign.id}`);
+      await backendClient.sessions.update(campaign.id, {
+        status: 'running',
+        start_time: new Date().toISOString(),
+      });
+      console.log(`[Injector] Successfully updated campaign status for: ${campaign.id}`);
+    } catch (error) {
+      console.error(`[Injector] Failed to update campaign status: ${error.message}`);
+      setError(`Failed to update campaign status: ${error.message}`);
+      setIsInjecting(false);
+      return;
+    }
 
     const runGenerationCycle = async () => {
       try {
-        console.log(`[Injector] Calling Python backend for campaign ${campaign.id}`);
+        console.log(`[Injector] Starting generation cycle for campaign ${campaign.id}`);
         
         // Format the campaign data for traffic generation
         const trafficConfig = {
@@ -62,65 +71,123 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
             log_format: 'csv'
           }
         };
+        console.log(`[Injector] Prepared traffic configuration:`, trafficConfig);
 
-        const { data: newLogs, error: funcError } = await backendClient.traffic.generate(trafficConfig);
+        console.log(`[Injector] Calling backend to generate traffic for campaign ${campaign.id}`);
+        const response = await backendClient.traffic.generate(trafficConfig);
+        console.log(`[Injector] Received response from backend:`, response);
         
-        if (funcError || !Array.isArray(newLogs)) {
-            const errorMessage = funcError?.message || "Backend function returned invalid data.";
-            console.error("[Injector] Backend function error:", errorMessage);
+        if (!response.success) {
+            const errorMessage = response.message || "Backend function returned invalid data.";
+            console.error(`[Injector] Backend function error for campaign ${campaign.id}:`, errorMessage);
             setError(`Backend Error: ${errorMessage}`);
             clearInterval(intervalRef.current);
             setIsInjecting(false);
             return;
         }
-        
-        console.log(`[Injector] Received ${newLogs.length} new log entries from backend.`);
+
+        // Get the generated traffic data
+        console.log(`[Injector] Fetching generated traffic data for campaign ${campaign.id}`);
+        const trafficData = await backendClient.traffic.getCampaignGenerated(campaign.id);
+        console.log(`[Injector] Received traffic data:`, trafficData);
+
+        if (!Array.isArray(trafficData)) {
+            console.error(`[Injector] Invalid traffic data format received for campaign ${campaign.id}:`, trafficData);
+            setError("Invalid traffic data format received from backend");
+            clearInterval(intervalRef.current);
+            setIsInjecting(false);
+            return;
+        }
+
+        console.log(`[Injector] Processing ${trafficData.length} traffic entries for campaign ${campaign.id}`);
 
         // 1. Save new logs to the database
-        await backendClient.logs.bulkCreate(newLogs);
+        try {
+            console.log(`[Injector] Saving traffic data to database for campaign ${campaign.id}`);
+            await backendClient.logs.bulkCreate(trafficData);
+            console.log(`[Injector] Successfully saved traffic data to database`);
+        } catch (error) {
+            console.error(`[Injector] Failed to save traffic data to database: ${error.message}`);
+            setError(`Failed to save traffic data: ${error.message}`);
+            clearInterval(intervalRef.current);
+            setIsInjecting(false);
+            return;
+        }
 
-        // 2. Fetch the latest campaign data to avoid overwriting stats
+        // 2. Fetch the latest campaign data
+        console.log(`[Injector] Fetching current campaign data for ${campaign.id}`);
         const currentSessions = await backendClient.sessions.list();
         const currentCampaign = currentSessions.find(s => s.id === campaign.id);
-        if (!currentCampaign) return;
+        if (!currentCampaign) {
+            console.error(`[Injector] Campaign ${campaign.id} not found in current sessions`);
+            return;
+        }
         
         // 3. Update campaign stats
-        const successfulNewLogs = newLogs.filter(log => log.success).length;
-        const total_requests = (currentCampaign.total_requests || 0) + newLogs.length;
+        const successfulNewLogs = trafficData.filter(log => log.success).length;
+        const total_requests = (currentCampaign.total_requests || 0) + trafficData.length;
         const successful_requests = (currentCampaign.successful_requests || 0) + successfulNewLogs;
         
-        await backendClient.sessions.update(campaign.id, {
+        console.log(`[Injector] Updating campaign stats:`, {
             total_requests,
             successful_requests,
-            last_activity_time: new Date().toISOString(),
+            new_logs: trafficData.length,
+            successful_new_logs: successfulNewLogs
         });
+
+        try {
+            await backendClient.sessions.update(campaign.id, {
+                total_requests,
+                successful_requests,
+                last_activity_time: new Date().toISOString(),
+            });
+            console.log(`[Injector] Successfully updated campaign stats for ${campaign.id}`);
+        } catch (error) {
+            console.error(`[Injector] Failed to update campaign stats: ${error.message}`);
+            setError(`Failed to update campaign stats: ${error.message}`);
+            clearInterval(intervalRef.current);
+            setIsInjecting(false);
+            return;
+        }
         
         onUpdate(true); // Trigger a silent refresh on the campaigns page
+        console.log(`[Injector] Completed generation cycle for campaign ${campaign.id}`);
 
       } catch (err) {
-        console.error("[Injector] Error during generation cycle:", err);
-        setError("An error occurred during traffic injection.");
+        console.error(`[Injector] Error during generation cycle for campaign ${campaign.id}:`, err);
+        setError(`An error occurred during traffic injection: ${err.message}`);
         clearInterval(intervalRef.current);
         setIsInjecting(false);
       }
     };
 
     // Run the first cycle immediately
+    console.log(`[Injector] Starting initial generation cycle for campaign ${campaign.id}`);
     await runGenerationCycle();
 
     // Set up the interval to run every 10 seconds
+    console.log(`[Injector] Setting up interval for campaign ${campaign.id} (10 seconds)`);
     intervalRef.current = setInterval(runGenerationCycle, 10000);
   };
   
   const stopTrafficGeneration = async () => {
+      console.log(`[Injector] Stopping traffic generation for campaign ${campaign.id}`);
       if (intervalRef.current) {
+          console.log(`[Injector] Clearing interval for campaign ${campaign.id}`);
           clearInterval(intervalRef.current);
       }
       setIsInjecting(false);
-      await backendClient.sessions.update(campaign.id, {
-        status: 'stopped',
-        end_time: new Date().toISOString()
-      });
+      try {
+          console.log(`[Injector] Updating campaign status to 'stopped' for ${campaign.id}`);
+          await backendClient.sessions.update(campaign.id, {
+            status: 'stopped',
+            end_time: new Date().toISOString()
+          });
+          console.log(`[Injector] Successfully stopped traffic generation for campaign ${campaign.id}`);
+      } catch (error) {
+          console.error(`[Injector] Error stopping traffic generation: ${error.message}`);
+          setError(`Failed to stop traffic generation: ${error.message}`);
+      }
       onUpdate();
   };
 
