@@ -2,9 +2,13 @@ from flask import Blueprint, request, jsonify
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+import logging
 # from bson import ObjectId # Commented out ObjectId import
 
 # from app.database import get_database # Commented out database import
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 bp = Blueprint('sessions', __name__)
 
@@ -68,76 +72,111 @@ class Session:
             'progress_percentage': self.progress_percentage
         }
 
-# In-memory storage for sessions (temporarily for testing)
+# Initialize in-memory storage for sessions
 sessions: Dict[str, Session] = {}
 
 @bp.route("/", methods=['POST'])
 def create_session():
     """Create a new traffic session"""
-    data = request.get_json()
-    session_id = f"session_{len(sessions) + 1}"
-    
-    new_session = Session(
-        id=session_id,
-        name=data['name'],
-        target_url=data['target_url'],
-        status="draft",
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
-        requests_per_minute=data.get('requests_per_minute', 10),
-        duration_minutes=data.get('duration_minutes', 60),
-        geo_locations=data.get('geo_locations', []),
-        rtb_config=data.get('rtb_config', {}),
-        config=data.get('config', {}),
-        user_profile_ids=data.get('user_profile_ids', []),
-        profile_user_counts=data.get('profile_user_counts', {}),
-        total_profile_users=data.get('total_profile_users', 0),
-        log_file_path=data.get('log_file_path'),
-        log_level=data.get('log_level'),
-        log_format=data.get('log_format'),
-        user_agents=data.get('user_agents', []),
-        referrers=data.get('referrers', [])
-    )
-    
-    sessions[session_id] = new_session
-    return jsonify(new_session.to_dict()), 201
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        # Validate required fields
+        required_fields = ['name', 'target_url']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
+
+        session_id = f"session_{len(sessions) + 1}"
+        
+        new_session = Session(
+            id=session_id,
+            name=data['name'],
+            target_url=data['target_url'],
+            status="draft",
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+            requests_per_minute=data.get('requests_per_minute', 10),
+            duration_minutes=data.get('duration_minutes', 60),
+            geo_locations=data.get('geo_locations', []),
+            rtb_config=data.get('rtb_config', {}),
+            config=data.get('config', {}),
+            user_profile_ids=data.get('user_profile_ids', []),
+            profile_user_counts=data.get('profile_user_counts', {}),
+            total_profile_users=data.get('total_profile_users', 0),
+            log_file_path=data.get('log_file_path'),
+            log_level=data.get('log_level'),
+            log_format=data.get('log_format'),
+            user_agents=data.get('user_agents', []),
+            referrers=data.get('referrers', [])
+        )
+        
+        sessions[session_id] = new_session
+        logger.info(f"Created new session: {session_id}")
+        return jsonify(new_session.to_dict()), 201
+    except Exception as e:
+        logger.error(f"Error creating session: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @bp.route("/", methods=['GET'])
 def list_sessions():
     """List all traffic sessions"""
-    return jsonify([session.to_dict() for session in sessions.values()])
+    try:
+        return jsonify([session.to_dict() for session in sessions.values()])
+    except Exception as e:
+        logger.error(f"Error listing sessions: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @bp.route("/<session_id>", methods=['GET'])
 def get_session(session_id):
     """Get a specific traffic session"""
-    if session_id not in sessions:
-        return jsonify({"error": "Session not found"}), 404
-    return jsonify(sessions[session_id].to_dict())
+    try:
+        if session_id not in sessions:
+            return jsonify({"error": "Session not found"}), 404
+        return jsonify(sessions[session_id].to_dict())
+    except Exception as e:
+        logger.error(f"Error getting session {session_id}: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @bp.route("/<session_id>", methods=['PUT'])
 def update_session(session_id):
     """Update a traffic session"""
-    if session_id not in sessions:
-        return jsonify({"error": "Session not found"}), 404
-    
-    data = request.get_json()
-    current_session = sessions[session_id]
-    
-    # Update fields if they exist in the request
-    for key, value in data.items():
-        if hasattr(current_session, key):
-            setattr(current_session, key, value)
-    
-    current_session.updated_at = datetime.utcnow()
-    sessions[session_id] = current_session
-    
-    return jsonify(current_session.to_dict())
+    try:
+        if session_id not in sessions:
+            return jsonify({"error": "Session not found"}), 404
+        
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        current_session = sessions[session_id]
+        
+        # Update fields if they exist in the request
+        for key, value in data.items():
+            if hasattr(current_session, key):
+                setattr(current_session, key, value)
+        
+        current_session.updated_at = datetime.utcnow()
+        sessions[session_id] = current_session
+        
+        logger.info(f"Updated session: {session_id}")
+        return jsonify(current_session.to_dict())
+    except Exception as e:
+        logger.error(f"Error updating session {session_id}: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @bp.route("/<session_id>", methods=['DELETE'])
 def delete_session(session_id):
     """Delete a traffic session"""
-    if session_id not in sessions:
-        return jsonify({"error": "Session not found"}), 404
-    
-    del sessions[session_id]
-    return '', 204 
+    try:
+        if session_id not in sessions:
+            return jsonify({"error": "Session not found"}), 404
+        
+        del sessions[session_id]
+        logger.info(f"Deleted session: {session_id}")
+        return '', 204
+    except Exception as e:
+        logger.error(f"Error deleting session {session_id}: {str(e)}")
+        return jsonify({"error": str(e)}), 500 
