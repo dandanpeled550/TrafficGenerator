@@ -208,12 +208,38 @@ def generate_adid() -> str:
     """Generate a random advertising ID"""
     return f"{random.randint(10000000, 99999999)}-{random.randint(1000, 9999)}-{random.randint(1000, 9999)}-{random.randint(1000, 9999)}"
 
-def simulate_request(traffic_data: Dict[str, Any]):
+def simulate_request(traffic_data: Dict[str, Any]) -> Dict[str, Any]:
     """Simulate making a request with the generated traffic data"""
-    # Here you would typically make an actual HTTP request
-    # For now, we'll just simulate it with a small delay
-    time.sleep(random.uniform(0.1, 0.5))
-    return True
+    try:
+        # Simulate network latency (50-500ms)
+        time.sleep(random.uniform(0.05, 0.5))
+        
+        # Simulate success rate (85% success)
+        success = random.random() < 0.85
+        
+        # Add response data
+        response_data = {
+            "success": success,
+            "response_time": round(random.uniform(50, 500), 2),  # ms
+            "status_code": 200 if success else random.choice([400, 403, 404, 500]),
+            "response_size": random.randint(500, 2000),  # bytes
+            "bid_id": f"bid-{random.randint(1000000, 9999999)}" if traffic_data.get('rtb_data') else None,
+            "win_price": round(random.uniform(0.1, 5.0), 2) if success and traffic_data.get('rtb_data') else None,
+            "currency": "USD" if success and traffic_data.get('rtb_data') else None
+        }
+        
+        # Merge response data with traffic data
+        traffic_data.update(response_data)
+        
+        return traffic_data
+    except Exception as e:
+        logger.error(f"Error simulating request: {str(e)}")
+        traffic_data.update({
+            "success": False,
+            "error": str(e),
+            "status_code": 500
+        })
+        return traffic_data
 
 @bp.route("/generated")
 def get_all_generated_traffic():
@@ -228,4 +254,187 @@ def get_campaign_generated_traffic(campaign_id: str):
     if not os.path.exists(campaign_file):
         return jsonify([])
     with open(campaign_file, 'r') as f:
-        return jsonify(json.load(f)) 
+        return jsonify(json.load(f))
+
+@bp.route("/stats/<campaign_id>")
+def get_campaign_stats(campaign_id: str):
+    """Get statistics for a specific campaign"""
+    try:
+        campaign_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}.json')
+        if not os.path.exists(campaign_file):
+            return jsonify({
+                "success": False,
+                "message": "No traffic data found for this campaign"
+            }), 404
+
+        with open(campaign_file, 'r') as f:
+            traffic_data = json.load(f)
+
+        # Calculate statistics
+        total_requests = len(traffic_data)
+        successful_requests = sum(1 for entry in traffic_data if entry.get('success', True))
+        success_rate = (successful_requests / total_requests * 100) if total_requests > 0 else 0
+
+        # Get unique values for various fields
+        geo_locations = list(set(entry.get('geo_location') for entry in traffic_data))
+        device_models = list(set(entry.get('rtb_data', {}).get('device_model') for entry in traffic_data if entry.get('rtb_data')))
+        ad_formats = list(set(entry.get('rtb_data', {}).get('ad_format') for entry in traffic_data if entry.get('rtb_data')))
+
+        # Calculate time-based statistics
+        timestamps = [datetime.fromisoformat(entry['timestamp']) for entry in traffic_data]
+        if timestamps:
+            start_time = min(timestamps)
+            end_time = max(timestamps)
+            duration_minutes = (end_time - start_time).total_seconds() / 60
+            requests_per_minute = total_requests / duration_minutes if duration_minutes > 0 else 0
+        else:
+            start_time = None
+            end_time = None
+            duration_minutes = 0
+            requests_per_minute = 0
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "campaign_id": campaign_id,
+                "total_requests": total_requests,
+                "successful_requests": successful_requests,
+                "success_rate": round(success_rate, 2),
+                "geo_locations": geo_locations,
+                "device_models": device_models,
+                "ad_formats": ad_formats,
+                "start_time": start_time.isoformat() if start_time else None,
+                "end_time": end_time.isoformat() if end_time else None,
+                "duration_minutes": round(duration_minutes, 2),
+                "requests_per_minute": round(requests_per_minute, 2)
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error getting campaign stats: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "message": f"Error getting campaign stats: {str(e)}"
+        }), 500
+
+def cleanup_campaign_resources(campaign_id: str):
+    """Clean up campaign resources and temporary files"""
+    try:
+        # Clean up campaign-specific files
+        campaign_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}.json')
+        if os.path.exists(campaign_file):
+            # Archive the file instead of deleting
+            archive_dir = os.path.join(TRAFFIC_DATA_DIR, 'archives')
+            os.makedirs(archive_dir, exist_ok=True)
+            archive_file = os.path.join(archive_dir, f'{campaign_id}_{datetime.utcnow().strftime("%Y%m%d_%H%M%S")}.json')
+            os.rename(campaign_file, archive_file)
+            
+        # Clean up temporary files
+        temp_dir = os.path.join(TRAFFIC_DATA_DIR, 'temp')
+        if os.path.exists(temp_dir):
+            for file in os.listdir(temp_dir):
+                if file.startswith(f'{campaign_id}_'):
+                    os.remove(os.path.join(temp_dir, file))
+                    
+        return True
+    except Exception as e:
+        logger.error(f"Error cleaning up campaign resources: {str(e)}")
+        return False
+
+@bp.route("/cleanup/<campaign_id>", methods=['POST'])
+def cleanup_campaign(campaign_id: str):
+    """Clean up campaign resources and update status"""
+    try:
+        # Clean up resources
+        cleanup_success = cleanup_campaign_resources(campaign_id)
+        
+        if cleanup_success:
+            return jsonify({
+                "success": True,
+                "message": "Campaign resources cleaned up successfully"
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "message": "Failed to clean up campaign resources"
+            }), 500
+    except Exception as e:
+        logger.error(f"Error in cleanup endpoint: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": f"Error cleaning up campaign: {str(e)}"
+        }), 500
+
+@bp.route("/stop/<campaign_id>", methods=['POST'])
+def stop_traffic_generation(campaign_id: str):
+    """Stop traffic generation for a campaign"""
+    try:
+        result = cleanup_campaign(campaign_id)
+        if result["success"]:
+            return jsonify(result)
+        else:
+            return jsonify(result), 500
+    except Exception as e:
+        logger.error(f"Error stopping traffic generation: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": f"Error stopping traffic generation: {str(e)}"
+        }), 500
+
+def update_campaign_status(campaign_id: str, status: str, additional_data: Dict[str, Any] = None):
+    """Update campaign status and related data"""
+    try:
+        campaign_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}.json')
+        if os.path.exists(campaign_file):
+            with open(campaign_file, 'r') as f:
+                traffic_data = json.load(f)
+            
+            # Calculate statistics
+            total_requests = len(traffic_data)
+            successful_requests = sum(1 for entry in traffic_data if entry.get('success', True))
+            
+            # Prepare status update
+            status_data = {
+                "campaign_id": campaign_id,
+                "status": status,
+                "total_requests": total_requests,
+                "successful_requests": successful_requests,
+                "last_activity_time": datetime.utcnow().isoformat()
+            }
+            
+            # Add any additional data
+            if additional_data:
+                status_data.update(additional_data)
+            
+            # Update status file
+            status_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}_status.json')
+            with open(status_file, 'w') as f:
+                json.dump(status_data, f)
+            
+            return status_data
+    except Exception as e:
+        logger.error(f"Error updating campaign status: {str(e)}")
+        return None
+
+@bp.route("/status/<campaign_id>", methods=['GET'])
+def get_campaign_status(campaign_id: str):
+    """Get current campaign status"""
+    try:
+        status_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}_status.json')
+        if os.path.exists(status_file):
+            with open(status_file, 'r') as f:
+                status_data = json.load(f)
+            return jsonify({
+                "success": True,
+                "data": status_data
+            })
+        else:
+            return jsonify({
+                "success": False,
+                "message": "No status data found for campaign"
+            }), 404
+    except Exception as e:
+        logger.error(f"Error getting campaign status: {str(e)}")
+        return jsonify({
+            "success": False,
+            "message": f"Error getting campaign status: {str(e)}"
+        }), 500 
