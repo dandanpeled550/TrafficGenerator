@@ -17,7 +17,24 @@ class UserProfile:
     id: str
     name: str
     description: str
-    custom_params: Dict = field(default_factory=dict)
+    demographics: Dict = field(default_factory=lambda: {
+        'age_group': 'any',
+        'gender': 'any',
+        'interests': []
+    })
+    device_preferences: Dict = field(default_factory=lambda: {
+        'device_brand': 'samsung',
+        'device_models': [],
+        'operating_system': 'android'
+    })
+    app_usage: Dict = field(default_factory=lambda: {
+        'preferred_app_categories': [],
+        'session_duration_avg_minutes': 15
+    })
+    rtb_specifics: Dict = field(default_factory=lambda: {
+        'preferred_ad_formats': [],
+        'adid_persistence': 'per_user'
+    })
     created_at: str = field(default_factory=lambda: str(uuid.uuid4()))
     updated_at: str = field(default_factory=lambda: str(uuid.uuid4()))
 
@@ -32,7 +49,10 @@ def create_profile():
             id=profile_id,
             name=data['name'],
             description=data['description'],
-            custom_params=data.get('custom_params', {})
+            demographics=data.get('demographics', {}),
+            device_preferences=data.get('device_preferences', {}),
+            app_usage=data.get('app_usage', {}),
+            rtb_specifics=data.get('rtb_specifics', {})
         )
         profiles[profile_id] = profile
         logger.info(f"Created profile: {profile}")
@@ -73,7 +93,10 @@ def update_profile(profile_id):
         profile = profiles[profile_id]
         profile.name = data.get('name', profile.name)
         profile.description = data.get('description', profile.description)
-        profile.custom_params = data.get('custom_params', profile.custom_params)
+        profile.demographics = data.get('demographics', profile.demographics)
+        profile.device_preferences = data.get('device_preferences', profile.device_preferences)
+        profile.app_usage = data.get('app_usage', profile.app_usage)
+        profile.rtb_specifics = data.get('rtb_specifics', profile.rtb_specifics)
         profile.updated_at = str(uuid.uuid4())
         
         logger.info(f"Updated profile: {profile}")

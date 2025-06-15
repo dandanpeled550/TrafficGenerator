@@ -98,7 +98,7 @@ class UserProfileCreate(UserProfile):
     updated_at: Optional[datetime] = None
 
 class UserProfileUpdate(BaseModel):
-    profile_name: Optional[str] = None
+    name: Optional[str] = None
     description: Optional[str] = None
     demographics: Optional[Demographics] = None
     device_preferences: Optional[DevicePreferences] = None
