@@ -307,73 +307,116 @@ def simulate_request(traffic_data: Dict[str, Any]) -> Dict[str, Any]:
         })
         return traffic_data
 
-@bp.route("/generated")
-def get_all_generated_traffic():
-    if not os.path.exists(ALL_TRAFFIC_FILE):
-        return jsonify([])
-    with open(ALL_TRAFFIC_FILE, 'r') as f:
-        return jsonify(json.load(f))
+@bp.route("/generated/<campaign_id>", methods=['GET'])
+def get_campaign_traffic(campaign_id: str):
+    """Get generated traffic for a specific campaign"""
+    try:
+        logger.info(f"Getting generated traffic for campaign {campaign_id}")
+        traffic_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}.json')
+        
+        if os.path.exists(traffic_file):
+            with open(traffic_file, 'r') as f:
+                traffic_data = json.load(f)
+            logger.debug(f"Retrieved {len(traffic_data)} traffic entries")
+            return jsonify({
+                "success": True,
+                "data": traffic_data
+            })
+        else:
+            logger.warning(f"No traffic data found for campaign {campaign_id}")
+            return jsonify({
+                "success": True,
+                "data": []
+            })
+    except Exception as e:
+        logger.error(f"Error getting campaign traffic: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "message": f"Error getting campaign traffic: {str(e)}"
+        }), 500
 
-@bp.route("/generated/<campaign_id>")
-def get_campaign_generated_traffic(campaign_id: str):
-    campaign_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}.json')
-    if not os.path.exists(campaign_file):
-        return jsonify([])
-    with open(campaign_file, 'r') as f:
-        return jsonify(json.load(f))
+@bp.route("/generated", methods=['GET'])
+def get_all_traffic():
+    """Get all generated traffic"""
+    try:
+        logger.info("Getting all generated traffic")
+        all_traffic = []
+        
+        for filename in os.listdir(TRAFFIC_DATA_DIR):
+            if filename.endswith('.json') and not filename.endswith('_status.json'):
+                with open(os.path.join(TRAFFIC_DATA_DIR, filename), 'r') as f:
+                    traffic_data = json.load(f)
+                    all_traffic.extend(traffic_data)
+        
+        logger.debug(f"Retrieved {len(all_traffic)} total traffic entries")
+        return jsonify({
+            "success": True,
+            "data": all_traffic
+        })
+    except Exception as e:
+        logger.error(f"Error getting all traffic: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "message": f"Error getting all traffic: {str(e)}"
+        }), 500
 
-@bp.route("/stats/<campaign_id>")
+@bp.route("/stats/<campaign_id>", methods=['GET'])
 def get_campaign_stats(campaign_id: str):
     """Get statistics for a specific campaign"""
     try:
-        campaign_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}.json')
-        if not os.path.exists(campaign_file):
+        logger.info(f"Getting stats for campaign {campaign_id}")
+        traffic_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}.json')
+        
+        if not os.path.exists(traffic_file):
+            logger.warning(f"No traffic data found for campaign {campaign_id}")
             return jsonify({
                 "success": False,
-                "message": "No traffic data found for this campaign"
+                "message": "No traffic data found for campaign"
             }), 404
-
-        with open(campaign_file, 'r') as f:
+            
+        with open(traffic_file, 'r') as f:
             traffic_data = json.load(f)
-
+            
         # Calculate statistics
         total_requests = len(traffic_data)
-        successful_requests = sum(1 for entry in traffic_data if entry.get('success', True))
+        successful_requests = sum(1 for entry in traffic_data if entry.get('success', False))
         success_rate = (successful_requests / total_requests * 100) if total_requests > 0 else 0
-
-        # Get unique values for various fields
-        geo_locations = list(set(entry.get('geo_location') for entry in traffic_data))
-        device_models = list(set(entry.get('rtb_data', {}).get('device_model') for entry in traffic_data if entry.get('rtb_data')))
-        ad_formats = list(set(entry.get('rtb_data', {}).get('ad_format') for entry in traffic_data if entry.get('rtb_data')))
-
-        # Calculate time-based statistics
-        timestamps = [datetime.fromisoformat(entry['timestamp']) for entry in traffic_data]
+        
+        # Get unique values
+        unique_geo = set(entry.get('geo_location') for entry in traffic_data if entry.get('geo_location'))
+        unique_devices = set(entry.get('device_model') for entry in traffic_data if entry.get('device_model'))
+        unique_formats = set(entry.get('ad_format') for entry in traffic_data if entry.get('ad_format'))
+        
+        # Time-based statistics
+        timestamps = [entry.get('timestamp') for entry in traffic_data if entry.get('timestamp')]
         if timestamps:
             start_time = min(timestamps)
             end_time = max(timestamps)
-            duration_minutes = (end_time - start_time).total_seconds() / 60
+            duration_minutes = (datetime.fromisoformat(end_time) - datetime.fromisoformat(start_time)).total_seconds() / 60
             requests_per_minute = total_requests / duration_minutes if duration_minutes > 0 else 0
         else:
             start_time = None
             end_time = None
             duration_minutes = 0
             requests_per_minute = 0
-
+            
+        stats = {
+            "total_requests": total_requests,
+            "successful_requests": successful_requests,
+            "success_rate": round(success_rate, 2),
+            "unique_geo_locations": len(unique_geo),
+            "unique_device_models": len(unique_devices),
+            "unique_ad_formats": len(unique_formats),
+            "start_time": start_time,
+            "end_time": end_time,
+            "duration_minutes": round(duration_minutes, 2),
+            "requests_per_minute": round(requests_per_minute, 2)
+        }
+        
+        logger.debug(f"Calculated stats for campaign {campaign_id}: {stats}")
         return jsonify({
             "success": True,
-            "data": {
-                "campaign_id": campaign_id,
-                "total_requests": total_requests,
-                "successful_requests": successful_requests,
-                "success_rate": round(success_rate, 2),
-                "geo_locations": geo_locations,
-                "device_models": device_models,
-                "ad_formats": ad_formats,
-                "start_time": start_time.isoformat() if start_time else None,
-                "end_time": end_time.isoformat() if end_time else None,
-                "duration_minutes": round(duration_minutes, 2),
-                "requests_per_minute": round(requests_per_minute, 2)
-            }
+            "data": stats
         })
     except Exception as e:
         logger.error(f"Error getting campaign stats: {str(e)}", exc_info=True)

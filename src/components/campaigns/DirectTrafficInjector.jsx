@@ -77,8 +77,8 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
         const response = await backendClient.traffic.generate(trafficConfig);
         console.log(`[Injector] Received response from backend:`, response);
         
-        if (!response.success) {
-            const errorMessage = response.message || "Backend function returned invalid data.";
+        if (!response || !response.success) {
+            const errorMessage = response?.message || "Backend function returned invalid data.";
             console.error(`[Injector] Backend function error for campaign ${campaign.id}:`, errorMessage);
             setError(`Backend Error: ${errorMessage}`);
             clearInterval(intervalRef.current);
@@ -88,10 +88,10 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
 
         // Get the generated traffic data
         console.log(`[Injector] Fetching generated traffic data for campaign ${campaign.id}`);
-        const trafficData = await backendClient.traffic.getCampaignGenerated(campaign.id);
+        const trafficData = await backendClient.traffic.getGenerated(campaign.id);
         console.log(`[Injector] Received traffic data:`, trafficData);
 
-        if (!Array.isArray(trafficData)) {
+        if (!trafficData || !Array.isArray(trafficData.data)) {
             console.error(`[Injector] Invalid traffic data format received for campaign ${campaign.id}:`, trafficData);
             setError("Invalid traffic data format received from backend");
             clearInterval(intervalRef.current);
@@ -99,7 +99,7 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
             return;
         }
 
-        console.log(`[Injector] Processing ${trafficData.length} traffic entries for campaign ${campaign.id}`);
+        console.log(`[Injector] Processing ${trafficData.data.length} traffic entries for campaign ${campaign.id}`);
 
         // 2. Fetch the latest campaign data
         console.log(`[Injector] Fetching current campaign data for ${campaign.id}`);
@@ -111,14 +111,14 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
         }
         
         // 3. Update campaign stats
-        const successfulNewLogs = trafficData.filter(log => log.success).length;
-        const total_requests = (currentCampaign.total_requests || 0) + trafficData.length;
+        const successfulNewLogs = trafficData.data.filter(log => log.success).length;
+        const total_requests = (currentCampaign.total_requests || 0) + trafficData.data.length;
         const successful_requests = (currentCampaign.successful_requests || 0) + successfulNewLogs;
         
         console.log(`[Injector] Updating campaign stats:`, {
             total_requests,
             successful_requests,
-            new_logs: trafficData.length,
+            new_logs: trafficData.data.length,
             successful_new_logs: successfulNewLogs
         });
 
