@@ -205,6 +205,12 @@ def generate_traffic():
 def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
     """Generate traffic data based on configuration"""
     logger.debug(f"Generating traffic data for campaign {config.campaign_id}")
+    
+    # Ensure geo_locations is not empty
+    if not config.geo_locations:
+        logger.warning(f"No geo_locations provided for campaign {config.campaign_id}, using default")
+        config.geo_locations = ["United States"]
+    
     traffic_data = {
         "timestamp": datetime.utcnow().isoformat(),
         "campaign_id": config.campaign_id,
@@ -224,12 +230,33 @@ def generate_rtb_data(rtb_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Generate RTB data if RTB configuration is provided"""
     if not rtb_config:
         return None
+    
+    # Default values for RTB configuration
+    default_device_models = ["Galaxy S24", "iPhone 15", "Pixel 8"]
+    default_ad_formats = ["banner", "interstitial", "native"]
+    default_app_categories = ["IAB9", "IAB1", "IAB2"]
+    
+    # Get values from config with defaults
+    device_models = rtb_config.get("device_models", default_device_models)
+    ad_formats = rtb_config.get("ad_formats", default_ad_formats)
+    app_categories = rtb_config.get("app_categories", default_app_categories)
+    
+    # Ensure lists are not empty
+    if not device_models:
+        logger.warning("Empty device_models list, using defaults")
+        device_models = default_device_models
+    if not ad_formats:
+        logger.warning("Empty ad_formats list, using defaults")
+        ad_formats = default_ad_formats
+    if not app_categories:
+        logger.warning("Empty app_categories list, using defaults")
+        app_categories = default_app_categories
         
     return {
         "device_brand": rtb_config.get("device_brand", "samsung"),
-        "device_model": random.choice(rtb_config.get("device_models", ["Galaxy S24"])),
-        "ad_format": random.choice(rtb_config.get("ad_formats", ["banner"])),
-        "app_category": random.choice(rtb_config.get("app_categories", ["IAB9"])),
+        "device_model": random.choice(device_models),
+        "ad_format": random.choice(ad_formats),
+        "app_category": random.choice(app_categories),
         "adid": generate_adid() if rtb_config.get("generate_adid", True) else None
     }
 
@@ -251,11 +278,14 @@ def simulate_request(traffic_data: Dict[str, Any]) -> Dict[str, Any]:
         success = random.random() < 0.85
         logger.debug(f"Request success: {success}")
         
+        # Error status codes
+        error_codes = [400, 403, 404, 500]
+        
         # Add response data
         response_data = {
             "success": success,
             "response_time": round(random.uniform(50, 500), 2),  # ms
-            "status_code": 200 if success else random.choice([400, 403, 404, 500]),
+            "status_code": 200 if success else random.choice(error_codes),
             "response_size": random.randint(500, 2000),  # bytes
             "bid_id": f"bid-{random.randint(1000000, 9999999)}" if traffic_data.get('rtb_data') else None,
             "win_price": round(random.uniform(0.1, 5.0), 2) if success and traffic_data.get('rtb_data') else None,
