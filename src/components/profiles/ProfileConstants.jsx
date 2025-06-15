@@ -1,4 +1,3 @@
-
 export const AGE_GROUPS = ["any", "18-24", "25-34", "35-44", "45-54", "55-64", "65+"];
 export const GENDERS = ["any", "male", "female", "other"];
 export const INTERESTS_SUGGESTIONS = [
@@ -40,7 +39,7 @@ export const ADID_PERSISTENCE_OPTIONS = [
 ];
 
 export const getDefaultUserProfile = () => ({
-  profile_name: "",
+  name: "",
   description: "",
   demographics: {
     age_group: "any",
