@@ -37,7 +37,33 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
     const runGenerationCycle = async () => {
       try {
         console.log(`[Injector] Calling Python backend for campaign ${campaign.id}`);
-        const { data: newLogs, error: funcError } = await backendClient.traffic.generate(campaign);
+        
+        // Format the campaign data for traffic generation
+        const trafficConfig = {
+          campaign_id: campaign.id,
+          target_url: campaign.target_url,
+          requests_per_minute: campaign.requests_per_minute || 10,
+          duration_minutes: campaign.duration_minutes || 60,
+          geo_locations: campaign.geo_locations || ['United States'],
+          rtb_config: campaign.rtb_config || {
+            device_brand: 'samsung',
+            device_models: ['Galaxy S24'],
+            ad_formats: ['banner'],
+            app_categories: ['IAB9'],
+            generate_adid: true,
+            simulate_bid_requests: true
+          },
+          config: campaign.config || {
+            randomize_timing: true,
+            follow_redirects: true,
+            simulate_browsing: false,
+            enable_logging: true,
+            log_level: 'info',
+            log_format: 'csv'
+          }
+        };
+
+        const { data: newLogs, error: funcError } = await backendClient.traffic.generate(trafficConfig);
         
         if (funcError || !Array.isArray(newLogs)) {
             const errorMessage = funcError?.message || "Backend function returned invalid data.";
