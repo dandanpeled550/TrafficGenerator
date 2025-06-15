@@ -434,13 +434,33 @@ def cleanup_campaign(campaign_id: str):
 def stop_traffic_generation(campaign_id: str):
     """Stop traffic generation for a campaign"""
     try:
-        result = cleanup_campaign(campaign_id)
-        if result["success"]:
-            return jsonify(result)
+        logger.info(f"Stopping traffic generation for campaign {campaign_id}")
+        
+        # Update campaign status
+        status_data = {
+            "status": "stopped",
+            "end_time": datetime.utcnow().isoformat()
+        }
+        update_campaign_status(campaign_id, "stopped", status_data)
+        
+        # Clean up resources
+        cleanup_success = cleanup_campaign_resources(campaign_id)
+        
+        if cleanup_success:
+            logger.info(f"Successfully stopped traffic generation for campaign {campaign_id}")
+            return jsonify({
+                "success": True,
+                "message": "Traffic generation stopped successfully",
+                "data": status_data
+            })
         else:
-            return jsonify(result), 500
+            logger.error(f"Failed to clean up resources for campaign {campaign_id}")
+            return jsonify({
+                "success": False,
+                "message": "Failed to clean up campaign resources"
+            }), 500
     except Exception as e:
-        logger.error(f"Error stopping traffic generation: {str(e)}")
+        logger.error(f"Error stopping traffic generation: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
             "message": f"Error stopping traffic generation: {str(e)}"
@@ -485,22 +505,43 @@ def update_campaign_status(campaign_id: str, status: str, additional_data: Dict[
 def get_campaign_status(campaign_id: str):
     """Get current campaign status"""
     try:
+        logger.info(f"Getting status for campaign {campaign_id}")
         status_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}_status.json')
+        
         if os.path.exists(status_file):
             with open(status_file, 'r') as f:
                 status_data = json.load(f)
+            logger.debug(f"Retrieved status data: {status_data}")
             return jsonify({
                 "success": True,
                 "data": status_data
             })
         else:
+            logger.warning(f"No status data found for campaign {campaign_id}")
             return jsonify({
                 "success": False,
                 "message": "No status data found for campaign"
             }), 404
     except Exception as e:
-        logger.error(f"Error getting campaign status: {str(e)}")
+        logger.error(f"Error getting campaign status: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
             "message": f"Error getting campaign status: {str(e)}"
+        }), 500
+
+@bp.route("/health", methods=['GET'])
+def health_check():
+    """Health check endpoint"""
+    try:
+        return jsonify({
+            "success": True,
+            "status": "healthy",
+            "timestamp": datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "status": "unhealthy",
+            "error": str(e)
         }), 500 
