@@ -71,15 +71,24 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
             log_format: 'csv'
           }
         };
-        console.log(`[Injector] Prepared traffic configuration:`, trafficConfig);
+        console.log(`[Injector] Prepared traffic configuration:`, JSON.stringify(trafficConfig, null, 2));
 
         console.log(`[Injector] Calling backend to generate traffic for campaign ${campaign.id}`);
         const response = await backendClient.traffic.generate(trafficConfig);
-        console.log(`[Injector] Received response from backend:`, response);
+        console.log(`[Injector] Raw response from backend:`, JSON.stringify(response, null, 2));
         
-        if (!response || !response.success) {
-            const errorMessage = response?.message || "Backend function returned invalid data.";
+        if (!response) {
+            console.error(`[Injector] Backend returned null response for campaign ${campaign.id}`);
+            setError("Backend returned null response");
+            clearInterval(intervalRef.current);
+            setIsInjecting(false);
+            return;
+        }
+
+        if (!response.success) {
+            const errorMessage = response.message || "Backend function returned invalid data.";
             console.error(`[Injector] Backend function error for campaign ${campaign.id}:`, errorMessage);
+            console.error(`[Injector] Full error response:`, JSON.stringify(response, null, 2));
             setError(`Backend Error: ${errorMessage}`);
             clearInterval(intervalRef.current);
             setIsInjecting(false);
@@ -89,10 +98,28 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
         // Get the generated traffic data
         console.log(`[Injector] Fetching generated traffic data for campaign ${campaign.id}`);
         const trafficData = await backendClient.traffic.getGenerated(campaign.id);
-        console.log(`[Injector] Received traffic data:`, trafficData);
+        console.log(`[Injector] Raw traffic data response:`, JSON.stringify(trafficData, null, 2));
 
-        if (!trafficData || !Array.isArray(trafficData.data)) {
-            console.error(`[Injector] Invalid traffic data format received for campaign ${campaign.id}:`, trafficData);
+        if (!trafficData) {
+            console.error(`[Injector] Backend returned null traffic data for campaign ${campaign.id}`);
+            setError("Backend returned null traffic data");
+            clearInterval(intervalRef.current);
+            setIsInjecting(false);
+            return;
+        }
+
+        if (!trafficData.success) {
+            console.error(`[Injector] Backend returned error in traffic data:`, trafficData.message);
+            setError(`Backend Error: ${trafficData.message}`);
+            clearInterval(intervalRef.current);
+            setIsInjecting(false);
+            return;
+        }
+
+        if (!Array.isArray(trafficData.data)) {
+            console.error(`[Injector] Invalid traffic data format received for campaign ${campaign.id}:`, 
+                `Expected array, got ${typeof trafficData.data}`);
+            console.error(`[Injector] Full traffic data:`, JSON.stringify(trafficData, null, 2));
             setError("Invalid traffic data format received from backend");
             clearInterval(intervalRef.current);
             setIsInjecting(false);
@@ -104,11 +131,13 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
         // 2. Fetch the latest campaign data
         console.log(`[Injector] Fetching current campaign data for ${campaign.id}`);
         const currentSessions = await backendClient.sessions.list();
+        console.log(`[Injector] Retrieved ${currentSessions.length} sessions`);
         const currentCampaign = currentSessions.find(s => s.id === campaign.id);
         if (!currentCampaign) {
             console.error(`[Injector] Campaign ${campaign.id} not found in current sessions`);
             return;
         }
+        console.log(`[Injector] Found current campaign data:`, JSON.stringify(currentCampaign, null, 2));
         
         // 3. Update campaign stats
         const successfulNewLogs = trafficData.data.filter(log => log.success).length;
@@ -131,6 +160,7 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
             console.log(`[Injector] Successfully updated campaign stats for ${campaign.id}`);
         } catch (error) {
             console.error(`[Injector] Failed to update campaign stats: ${error.message}`);
+            console.error(`[Injector] Full error:`, error);
             setError(`Failed to update campaign stats: ${error.message}`);
             clearInterval(intervalRef.current);
             setIsInjecting(false);
@@ -142,6 +172,7 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
 
       } catch (err) {
         console.error(`[Injector] Error during generation cycle for campaign ${campaign.id}:`, err);
+        console.error(`[Injector] Full error details:`, JSON.stringify(err, null, 2));
         setError(`An error occurred during traffic injection: ${err.message}`);
         clearInterval(intervalRef.current);
         setIsInjecting(false);

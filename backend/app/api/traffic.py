@@ -5,7 +5,7 @@ from typing import List, Optional, Dict, Any
 import threading
 import random
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from dataclasses import dataclass
 import logging
 
@@ -72,96 +72,101 @@ class TrafficConfig:
             self.updated_at = datetime.utcnow()
 
 def generate_traffic_background(config: TrafficConfig):
-    """Background task to generate traffic"""
-    start_time = time.time()
-    request_count = 0
-    
-    logger.info(f"Starting traffic generation for campaign {config.campaign_id}")
-    logger.info(f"Configuration: requests_per_minute={config.requests_per_minute}, duration_minutes={config.duration_minutes}")
-    
-    while True:
-        # Check if we should stop
-        if config.duration_minutes and (time.time() - start_time) > (config.duration_minutes * 60):
-            logger.info(f"Traffic generation completed for campaign {config.campaign_id}. Duration limit reached.")
-            break
-            
-        # Generate traffic batch
-        batch_size = min(config.requests_per_minute, 10)  # Process in smaller batches
-        logger.debug(f"Generating batch of {batch_size} requests for campaign {config.campaign_id}")
-        
-        for i in range(batch_size):
+    """Generate traffic in the background"""
+    try:
+        logger.info(f"Starting background traffic generation for campaign {config.campaign_id}")
+        logger.debug(f"Configuration: {config}")
+
+        # Create campaign data file if it doesn't exist
+        campaign_file = os.path.join(TRAFFIC_DATA_DIR, f'{config.campaign_id}.json')
+        if not os.path.exists(campaign_file):
+            logger.info(f"Creating new campaign file: {campaign_file}")
+            with open(campaign_file, 'w') as f:
+                json.dump([], f)
+
+        # Calculate total requests
+        total_requests = config.requests_per_minute * (config.duration_minutes or 60)
+        logger.info(f"Will generate {total_requests} total requests")
+
+        # Generate traffic
+        request_count = 0
+        start_time = datetime.utcnow()
+        end_time = start_time + timedelta(minutes=config.duration_minutes) if config.duration_minutes else None
+
+        while True:
             try:
+                # Check if we should stop
+                if end_time and datetime.utcnow() >= end_time:
+                    logger.info(f"Reached duration limit for campaign {config.campaign_id}")
+                    break
+
                 # Generate traffic data
                 traffic_data = generate_traffic_data(config)
-                logger.debug(f"Generated traffic data for request {i+1}/{batch_size}: {traffic_data}")
-                
+                logger.debug(f"Generated traffic data: {json.dumps(traffic_data, indent=2)}")
+
                 # Simulate request
                 response_data = simulate_request(traffic_data)
-                logger.debug(f"Simulated request response: {response_data}")
-                
+                logger.debug(f"Simulated request response: {json.dumps(response_data, indent=2)}")
+
                 # Save to file
                 append_traffic_to_file(config.campaign_id, response_data)
-                logger.debug(f"Saved traffic data to file for campaign {config.campaign_id}")
-                
                 request_count += 1
-                
+                logger.debug(f"Saved request {request_count} for campaign {config.campaign_id}")
+
+                # Calculate sleep time
+                sleep_time = 60 / config.requests_per_minute
+                if config.config.get('randomize_timing', True):
+                    sleep_time *= random.uniform(0.8, 1.2)
+                logger.debug(f"Sleeping for {sleep_time:.2f} seconds")
+                time.sleep(sleep_time)
+
             except Exception as e:
-                logger.error(f"Error generating traffic for campaign {config.campaign_id}: {str(e)}", exc_info=True)
-        
-        # Update campaign status
-        try:
-            status_data = {
-                "total_requests": request_count,
-                "elapsed_time": time.time() - start_time,
-                "requests_per_minute": request_count / ((time.time() - start_time) / 60)
-            }
-            update_campaign_status(config.campaign_id, "running", status_data)
-            logger.info(f"Updated campaign status for {config.campaign_id}: {status_data}")
-        except Exception as e:
-            logger.error(f"Error updating campaign status: {str(e)}", exc_info=True)
-        
-        # Wait for next batch
-        sleep_time = 60 / config.requests_per_minute
-        logger.debug(f"Waiting {sleep_time:.2f} seconds before next batch")
-        time.sleep(sleep_time)
+                logger.error(f"Error in traffic generation loop: {str(e)}", exc_info=True)
+                time.sleep(1)  # Prevent tight loop on error
+
+        logger.info(f"Completed traffic generation for campaign {config.campaign_id}")
+        logger.info(f"Generated {request_count} requests")
+
+    except Exception as e:
+        logger.error(f"Error in background traffic generation: {str(e)}", exc_info=True)
 
 @bp.route("/generate", methods=['POST'])
 def generate_traffic():
+    """Start traffic generation for a campaign"""
     try:
+        logger.info("Received traffic generation request")
         data = request.get_json()
+        logger.debug(f"Request data: {json.dumps(data, indent=2)}")
+
         if not data:
             logger.error("No data provided in request")
             return jsonify({
                 "success": False,
                 "message": "No data provided"
             }), 400
-        
-        logger.info(f"Received traffic generation request: {data}")
-        
-        # Remove any fields that aren't part of TrafficConfig
-        valid_fields = {
-            'campaign_id', 'target_url', 'requests_per_minute', 'duration_minutes',
-            'geo_locations', 'rtb_config', 'config', 'user_profiles', 'log_file_path',
-            'status', 'created_at', 'updated_at', 'start_time', 'end_time',
-            'total_requests', 'successful_requests', 'last_activity_time',
-            'progress_percentage'
-        }
-        filtered_data = {k: v for k, v in data.items() if k in valid_fields}
-        logger.debug(f"Filtered configuration data: {filtered_data}")
-        
+
         # Validate required fields
         required_fields = ['campaign_id', 'target_url']
-        missing_fields = [field for field in required_fields if field not in filtered_data]
+        missing_fields = [field for field in required_fields if field not in data]
         if missing_fields:
             logger.error(f"Missing required fields: {missing_fields}")
             return jsonify({
                 "success": False,
                 "message": f"Missing required fields: {', '.join(missing_fields)}"
             }), 400
-        
+
+        # Create TrafficConfig object
         try:
-            config = TrafficConfig(**filtered_data)
-            logger.info(f"Created TrafficConfig object: {config}")
+            config = TrafficConfig(
+                campaign_id=data['campaign_id'],
+                target_url=data['target_url'],
+                requests_per_minute=data.get('requests_per_minute', 10),
+                duration_minutes=data.get('duration_minutes', 60),
+                geo_locations=data.get('geo_locations', ['United States']),
+                rtb_config=data.get('rtb_config', {}),
+                config=data.get('config', {})
+            )
+            logger.debug(f"Created TrafficConfig: {config}")
         except Exception as e:
             logger.error(f"Error creating TrafficConfig: {str(e)}", exc_info=True)
             return jsonify({
@@ -185,15 +190,20 @@ def generate_traffic():
             }), 400
 
         # Start traffic generation in background thread
+        logger.info(f"Starting traffic generation thread for campaign {config.campaign_id}")
         thread = threading.Thread(target=generate_traffic_background, args=(config,))
         thread.daemon = True
         thread.start()
         
-        logger.info(f"Started traffic generation thread for campaign {config.campaign_id}")
+        logger.info(f"Successfully started traffic generation for campaign {config.campaign_id}")
         return jsonify({
             "success": True,
             "message": "Traffic generation started",
-            "data": {"campaign_id": config.campaign_id}
+            "data": {
+                "campaign_id": config.campaign_id,
+                "requests_per_minute": config.requests_per_minute,
+                "duration_minutes": config.duration_minutes
+            }
         })
     except Exception as e:
         logger.error(f"Error generating traffic: {str(e)}", exc_info=True)
