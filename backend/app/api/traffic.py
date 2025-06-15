@@ -7,6 +7,10 @@ import random
 import time
 from datetime import datetime
 from dataclasses import dataclass
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 bp = Blueprint('traffic', __name__)
 
@@ -101,6 +105,14 @@ def generate_traffic_background(config: TrafficConfig):
 def generate_traffic():
     try:
         data = request.get_json()
+        if not data:
+            logger.error("No data provided in request")
+            return jsonify({
+                "success": False,
+                "message": "No data provided"
+            }), 400
+        
+        logger.info(f"Received traffic generation request: {data}")
         
         # Remove any fields that aren't part of TrafficConfig
         valid_fields = {
@@ -112,16 +124,35 @@ def generate_traffic():
         }
         filtered_data = {k: v for k, v in data.items() if k in valid_fields}
         
-        config = TrafficConfig(**filtered_data)
+        # Validate required fields
+        required_fields = ['campaign_id', 'target_url']
+        missing_fields = [field for field in required_fields if field not in filtered_data]
+        if missing_fields:
+            logger.error(f"Missing required fields: {missing_fields}")
+            return jsonify({
+                "success": False,
+                "message": f"Missing required fields: {', '.join(missing_fields)}"
+            }), 400
+        
+        try:
+            config = TrafficConfig(**filtered_data)
+        except Exception as e:
+            logger.error(f"Error creating TrafficConfig: {str(e)}")
+            return jsonify({
+                "success": False,
+                "message": f"Invalid configuration: {str(e)}"
+            }), 400
 
         # Validate configuration
         if config.requests_per_minute <= 0:
+            logger.error(f"Invalid requests_per_minute: {config.requests_per_minute}")
             return jsonify({
                 "success": False,
                 "message": "Requests per minute must be greater than 0"
             }), 400
         
         if config.duration_minutes is not None and config.duration_minutes <= 0:
+            logger.error(f"Invalid duration_minutes: {config.duration_minutes}")
             return jsonify({
                 "success": False,
                 "message": "Duration must be greater than 0"
@@ -132,16 +163,17 @@ def generate_traffic():
         thread.daemon = True
         thread.start()
         
+        logger.info(f"Started traffic generation for campaign {config.campaign_id}")
         return jsonify({
             "success": True,
             "message": "Traffic generation started",
             "data": {"campaign_id": config.campaign_id}
         })
     except Exception as e:
-        logger.error(f"Error generating traffic: {str(e)}")
+        logger.error(f"Error generating traffic: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
-            "message": str(e)
+            "message": f"Internal server error: {str(e)}"
         }), 500
 
 def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
