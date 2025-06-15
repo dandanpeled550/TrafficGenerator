@@ -18,16 +18,16 @@ class Session:
     id: str
     name: str
     target_url: str
-    status: str
-    created_at: datetime
-    updated_at: datetime
+    status: str = "draft"
+    created_at: datetime = field(default_factory=datetime.utcnow)
+    updated_at: datetime = field(default_factory=datetime.utcnow)
     
     # Optional fields with defaults
     requests_per_minute: int = 10
     duration_minutes: Optional[int] = 60
-    geo_locations: List[str] = field(default_factory=list)
-    rtb_config: Optional[Dict[str, Any]] = field(default_factory=dict)
-    config: Optional[Dict[str, Any]] = field(default_factory=dict)
+    geo_locations: List[str] = field(default_factory=lambda: ["United States"])
+    rtb_config: Optional[Dict[str, Any]] = None
+    config: Optional[Dict[str, Any]] = None
     user_profile_ids: List[str] = field(default_factory=list)
     profile_user_counts: Optional[Dict[str, int]] = field(default_factory=dict)
     total_profile_users: int = 0
@@ -41,13 +41,19 @@ class Session:
     total_requests: int = 0
     successful_requests: int = 0
     last_activity_time: Optional[datetime] = None
-    progress_percentage: int = 0
+    progress_percentage: float = 0.0
 
-    def to_dict(self):
+    def to_dict(self) -> Dict[str, Any]:
+        ensure_datetime_fields(self)
         return {
             'id': self.id,
             'name': self.name,
             'target_url': self.target_url,
+            'status': self.status,
+            'created_at': self.created_at.isoformat() if isinstance(self.created_at, datetime) else self.created_at,
+            'updated_at': self.updated_at.isoformat() if isinstance(self.updated_at, datetime) else self.updated_at,
+            'start_time': self.start_time.isoformat() if isinstance(self.start_time, datetime) else self.start_time,
+            'end_time': self.end_time.isoformat() if isinstance(self.end_time, datetime) else self.end_time,
             'requests_per_minute': self.requests_per_minute,
             'duration_minutes': self.duration_minutes,
             'geo_locations': self.geo_locations,
@@ -61,19 +67,34 @@ class Session:
             'log_format': self.log_format,
             'user_agents': self.user_agents,
             'referrers': self.referrers,
-            'status': self.status,
-            'created_at': self.created_at.isoformat(),
-            'updated_at': self.updated_at.isoformat(),
-            'start_time': self.start_time.isoformat() if self.start_time else None,
-            'end_time': self.end_time.isoformat() if self.end_time else None,
             'total_requests': self.total_requests,
             'successful_requests': self.successful_requests,
-            'last_activity_time': self.last_activity_time.isoformat() if self.last_activity_time else None,
+            'last_activity_time': self.last_activity_time.isoformat() if isinstance(self.last_activity_time, datetime) else self.last_activity_time,
             'progress_percentage': self.progress_percentage
         }
 
 # Initialize in-memory storage for sessions
 sessions: Dict[str, Session] = {}
+
+def ensure_datetime_fields(session):
+    # List of all datetime fields
+    datetime_fields = ['created_at', 'updated_at', 'start_time', 'end_time', 'last_activity_time']
+    for field in datetime_fields:
+        value = getattr(session, field, None)
+        logger.debug(f"Field {field} before conversion: {value} (type: {type(value)})")
+        if value is not None and not isinstance(value, datetime):
+            if isinstance(value, str):
+                try:
+                    value = value.replace('Z', '+00:00')
+                    value = datetime.fromisoformat(value)
+                except Exception as e:
+                    logger.warning(f"Failed to convert {field} from string to datetime: {e}")
+                    value = None
+            else:
+                value = None
+        setattr(session, field, value)
+        logger.debug(f"Field {field} after conversion: {value} (type: {type(value)})")
+    return session
 
 @bp.route("/", methods=['POST'])
 def create_session():
@@ -100,22 +121,15 @@ def create_session():
             updated_at=datetime.utcnow(),
             requests_per_minute=data.get('requests_per_minute', 10),
             duration_minutes=data.get('duration_minutes', 60),
-            geo_locations=data.get('geo_locations', []),
-            rtb_config=data.get('rtb_config', {}),
-            config=data.get('config', {}),
-            user_profile_ids=data.get('user_profile_ids', []),
-            profile_user_counts=data.get('profile_user_counts', {}),
-            total_profile_users=data.get('total_profile_users', 0),
-            log_file_path=data.get('log_file_path'),
-            log_level=data.get('log_level'),
-            log_format=data.get('log_format'),
-            user_agents=data.get('user_agents', []),
-            referrers=data.get('referrers', [])
+            geo_locations=data.get('geo_locations', ["United States"]),
+            rtb_config=data.get('rtb_config'),
+            config=data.get('config'),
+            user_profile_ids=data.get('user_profile_ids', [])
         )
-        
+        new_session = ensure_datetime_fields(new_session)
         sessions[session_id] = new_session
         logger.info(f"Created new session: {session_id}")
-        return jsonify(new_session.to_dict()), 201
+        return jsonify(new_session.to_dict())
     except Exception as e:
         logger.error(f"Error creating session: {str(e)}")
         return jsonify({"error": str(e)}), 500
@@ -130,7 +144,7 @@ def list_sessions():
         return jsonify({"error": str(e)}), 500
 
 @bp.route("/<session_id>", methods=['GET'])
-def get_session(session_id):
+def get_session(session_id: str):
     """Get a specific traffic session"""
     try:
         if session_id not in sessions:
@@ -141,42 +155,49 @@ def get_session(session_id):
         return jsonify({"error": str(e)}), 500
 
 @bp.route("/<session_id>", methods=['PUT'])
-def update_session(session_id):
+def update_session(session_id: str):
     """Update a traffic session"""
     try:
         if session_id not in sessions:
             return jsonify({"error": "Session not found"}), 404
-        
+            
         data = request.get_json()
         if not data:
             return jsonify({"error": "No data provided"}), 400
-
-        current_session = sessions[session_id]
+            
+        session = sessions[session_id]
         
-        # Update fields if they exist in the request
-        for key, value in data.items():
-            if hasattr(current_session, key):
-                setattr(current_session, key, value)
-        
-        current_session.updated_at = datetime.utcnow()
-        sessions[session_id] = current_session
-        
-        logger.info(f"Updated session: {session_id}")
-        return jsonify(current_session.to_dict())
+        # Update fields if provided
+        for field, value in data.items():
+            if hasattr(session, field):
+                if field in ['created_at', 'updated_at', 'start_time', 'end_time', 'last_activity_time']:
+                    # Convert string to datetime if needed
+                    if isinstance(value, str):
+                        try:
+                            value = value.replace('Z', '+00:00')
+                            value = datetime.fromisoformat(value)
+                        except ValueError as e:
+                            logger.warning(f"Invalid datetime format for {field}: {value}, error: {str(e)}")
+                            continue
+                setattr(session, field, value)
+        session = ensure_datetime_fields(session)
+        session.updated_at = datetime.utcnow()
+        logger.info(f"Updated session {session_id}")
+        return jsonify(session.to_dict())
     except Exception as e:
         logger.error(f"Error updating session {session_id}: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @bp.route("/<session_id>", methods=['DELETE'])
-def delete_session(session_id):
+def delete_session(session_id: str):
     """Delete a traffic session"""
     try:
         if session_id not in sessions:
             return jsonify({"error": "Session not found"}), 404
-        
+            
         del sessions[session_id]
-        logger.info(f"Deleted session: {session_id}")
-        return '', 204
+        logger.info(f"Deleted session {session_id}")
+        return jsonify({"message": "Session deleted successfully"})
     except Exception as e:
         logger.error(f"Error deleting session {session_id}: {str(e)}")
         return jsonify({"error": str(e)}), 500 
