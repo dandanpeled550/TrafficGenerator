@@ -51,6 +51,15 @@ app.register_blueprint(traffic.bp, url_prefix='/api/traffic')
 app.register_blueprint(sessions.bp, url_prefix='/api/sessions')
 app.register_blueprint(profiles.bp, url_prefix='/api/profiles')
 
+# Add a catch-all route for undefined API endpoints
+@app.route('/api/<path:path>')
+def catch_all(path):
+    logger.warning(f"Undefined API endpoint accessed: /api/{path}")
+    return jsonify({
+        "error": "Not Found",
+        "message": f"API endpoint /api/{path} does not exist"
+    }), 404
+
 @app.before_request
 def log_request_info():
     logger.info('Headers: %s', request.headers)

@@ -8,6 +8,8 @@ import time
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 import logging
+from threading import Lock
+import uuid
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -17,6 +19,10 @@ bp = Blueprint('traffic', __name__)
 TRAFFIC_DATA_DIR = os.path.join(os.path.dirname(__file__), 'traffic_data')
 os.makedirs(TRAFFIC_DATA_DIR, exist_ok=True)
 ALL_TRAFFIC_FILE = os.path.join(TRAFFIC_DATA_DIR, 'all_traffic.json')
+
+# Add after other global variables
+active_threads = {}
+thread_locks = {}
 
 def append_traffic_to_file(campaign_id: str, traffic_data: Dict[str, Any]):
     """Append traffic data to campaign-specific file"""
@@ -79,12 +85,18 @@ class TrafficConfig:
 
 def generate_traffic_background(config: TrafficConfig):
     """Generate traffic in the background"""
+    thread_id = str(uuid.uuid4())
+    active_threads[config.campaign_id] = thread_id
+    
     try:
         logger.info(f"Starting background traffic generation for campaign {config.campaign_id}")
         logger.debug(f"Configuration: {config}")
 
-        # Create campaign-specific data file
-        campaign_file = os.path.join(TRAFFIC_DATA_DIR, config.campaign_id, 'traffic.json')
+        # Create campaign-specific directory and file
+        campaign_dir = os.path.join(TRAFFIC_DATA_DIR, config.campaign_id)
+        os.makedirs(campaign_dir, exist_ok=True)
+        
+        campaign_file = os.path.join(campaign_dir, 'traffic.json')
         if not os.path.exists(campaign_file):
             logger.info(f"Creating new campaign file: {campaign_file}")
             with open(campaign_file, 'w') as f:
@@ -99,8 +111,19 @@ def generate_traffic_background(config: TrafficConfig):
         start_time = datetime.utcnow()
         end_time = start_time + timedelta(minutes=config.duration_minutes) if config.duration_minutes else None
 
+        # Update campaign status to running
+        update_campaign_status(config.campaign_id, "running", {
+            "start_time": start_time.isoformat(),
+            "total_requests": total_requests
+        })
+
         while True:
             try:
+                # Check if thread was stopped
+                if active_threads.get(config.campaign_id) != thread_id:
+                    logger.info(f"Traffic generation stopped for campaign {config.campaign_id}")
+                    break
+
                 # Check if we should stop
                 if end_time and datetime.utcnow() >= end_time:
                     logger.info(f"Reached duration limit for campaign {config.campaign_id}")
@@ -115,9 +138,19 @@ def generate_traffic_background(config: TrafficConfig):
                 logger.debug(f"Simulated request response: {json.dumps(response_data, indent=2)}")
 
                 # Save to campaign-specific file
-                append_traffic_to_file(config.campaign_id, response_data)
+                with thread_locks.get(config.campaign_id, Lock()):
+                    append_traffic_to_file(config.campaign_id, response_data)
+                
                 request_count += 1
                 logger.debug(f"Saved request {request_count} for campaign {config.campaign_id}")
+
+                # Update progress
+                progress = (request_count / total_requests) * 100 if total_requests > 0 else 0
+                update_campaign_status(config.campaign_id, "running", {
+                    "progress_percentage": progress,
+                    "total_requests": request_count,
+                    "successful_requests": request_count if response_data.get('success') else request_count - 1
+                })
 
                 # Calculate sleep time
                 sleep_time = 60 / config.requests_per_minute
@@ -128,13 +161,33 @@ def generate_traffic_background(config: TrafficConfig):
 
             except Exception as e:
                 logger.error(f"Error in traffic generation loop: {str(e)}", exc_info=True)
+                update_campaign_status(config.campaign_id, "error", {
+                    "error": str(e),
+                    "last_request_count": request_count
+                })
                 time.sleep(1)  # Prevent tight loop on error
+
+        # Update final status
+        final_status = "completed" if request_count > 0 else "error"
+        update_campaign_status(config.campaign_id, final_status, {
+            "end_time": datetime.utcnow().isoformat(),
+            "total_requests": request_count,
+            "successful_requests": request_count if response_data.get('success') else request_count - 1
+        })
 
         logger.info(f"Completed traffic generation for campaign {config.campaign_id}")
         logger.info(f"Generated {request_count} requests")
 
     except Exception as e:
         logger.error(f"Error in background traffic generation: {str(e)}", exc_info=True)
+        update_campaign_status(config.campaign_id, "error", {
+            "error": str(e)
+        })
+    finally:
+        if active_threads.get(config.campaign_id) == thread_id:
+            del active_threads[config.campaign_id]
+        if config.campaign_id in thread_locks:
+            del thread_locks[config.campaign_id]
 
 @bp.route("/generate", methods=['POST'])
 def generate_traffic():
@@ -161,10 +214,20 @@ def generate_traffic():
                 "message": f"Missing required fields: {', '.join(missing_fields)}"
             }), 400
 
+        campaign_id = data['campaign_id']
+
+        # Check if traffic generation is already running
+        if campaign_id in active_threads:
+            logger.warning(f"Traffic generation already running for campaign {campaign_id}")
+            return jsonify({
+                "success": False,
+                "message": "Traffic generation already running for this campaign"
+            }), 409
+
         # Create TrafficConfig object
         try:
             config = TrafficConfig(
-                campaign_id=data['campaign_id'],
+                campaign_id=campaign_id,
                 target_url=data['target_url'],
                 requests_per_minute=data.get('requests_per_minute', 10),
                 duration_minutes=data.get('duration_minutes', 60),
@@ -196,25 +259,27 @@ def generate_traffic():
             }), 400
 
         # Create campaign-specific directory if it doesn't exist
-        campaign_dir = os.path.join(TRAFFIC_DATA_DIR, config.campaign_id)
-        if not os.path.exists(campaign_dir):
-            os.makedirs(campaign_dir)
-            logger.info(f"Created campaign directory: {campaign_dir}")
+        campaign_dir = os.path.join(TRAFFIC_DATA_DIR, campaign_id)
+        os.makedirs(campaign_dir, exist_ok=True)
+        logger.info(f"Ensured campaign directory exists: {campaign_dir}")
+
+        # Initialize thread lock
+        thread_locks[campaign_id] = Lock()
 
         # Start traffic generation in background thread
-        logger.info(f"Starting traffic generation thread for campaign {config.campaign_id}")
+        logger.info(f"Starting traffic generation thread for campaign {campaign_id}")
         thread = threading.Thread(target=generate_traffic_background, args=(config,))
         thread.daemon = True
         thread.start()
         
-        logger.info(f"Successfully started traffic generation for campaign {config.campaign_id}")
+        logger.info(f"Successfully started traffic generation for campaign {campaign_id}")
         
         # Return a proper response object
         response_data = {
             "success": True,
             "message": "Traffic generation started",
             "data": {
-                "campaign_id": config.campaign_id,
+                "campaign_id": campaign_id,
                 "requests_per_minute": config.requests_per_minute,
                 "duration_minutes": config.duration_minutes,
                 "status": "running",
