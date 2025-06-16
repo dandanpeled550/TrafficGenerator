@@ -28,6 +28,27 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
     setError(null);
     console.log(`[Injector] Starting backend traffic generation for campaign: ${campaign.name} (ID: ${campaign.id})`);
 
+    // First check backend health
+    try {
+      console.log(`[Injector] Checking backend health`);
+      const healthCheck = await backendClient.traffic.checkHealth();
+      console.log(`[Injector] Health check response:`, JSON.stringify(healthCheck, null, 2));
+      
+      if (!healthCheck.success || healthCheck.status !== 'healthy') {
+        const errorMessage = healthCheck.error || "Backend health check failed";
+        console.error(`[Injector] Backend health check failed:`, errorMessage);
+        setError(`Backend Error: ${errorMessage}`);
+        setIsInjecting(false);
+        return;
+      }
+      console.log(`[Injector] Backend health check passed`);
+    } catch (error) {
+      console.error(`[Injector] Error checking backend health:`, error);
+      setError(`Failed to check backend health: ${error.message}`);
+      setIsInjecting(false);
+      return;
+    }
+
     // Update campaign status immediately
     try {
       console.log(`[Injector] Updating campaign status to 'running' for campaign: ${campaign.id}`);
@@ -95,7 +116,20 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
             return;
         }
 
-        // Get the generated traffic data
+        // Verify response data structure
+        if (!response.data || !response.data.campaign_id) {
+            console.error(`[Injector] Invalid response data structure:`, JSON.stringify(response, null, 2));
+            setError("Invalid response data structure from backend");
+            clearInterval(intervalRef.current);
+            setIsInjecting(false);
+            return;
+        }
+
+        console.log(`[Injector] Successfully started traffic generation for campaign ${campaign.id}`);
+        console.log(`[Injector] Campaign status:`, response.data.status);
+        console.log(`[Injector] Start time:`, response.data.start_time);
+
+        // Get the generated traffic data for this campaign only
         console.log(`[Injector] Fetching generated traffic data for campaign ${campaign.id}`);
         const trafficData = await backendClient.traffic.getGenerated(campaign.id);
         console.log(`[Injector] Raw traffic data response:`, JSON.stringify(trafficData, null, 2));
