@@ -451,29 +451,159 @@ def simulate_request(traffic_data: Dict[str, Any]) -> Dict[str, Any]:
 def get_campaign_traffic(campaign_id: str):
     """Get generated traffic for a specific campaign"""
     try:
-        logger.info(f"Getting generated traffic for campaign {campaign_id}")
-        traffic_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}.json')
+        logger.info(f"[API] Getting generated traffic for campaign {campaign_id}")
+        campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
         
-        if os.path.exists(traffic_file):
-            with open(traffic_file, 'r') as f:
+        if os.path.exists(campaign_file):
+            with open(campaign_file, 'r') as f:
                 traffic_data = json.load(f)
-            logger.debug(f"Retrieved {len(traffic_data)} traffic entries")
+            logger.info(f"[API] Retrieved {len(traffic_data)} traffic entries for campaign {campaign_id}")
             return jsonify({
                 "success": True,
-                "data": traffic_data
+                "data": traffic_data,
+                "metadata": {
+                    "total_requests": len(traffic_data),
+                    "successful_requests": sum(1 for entry in traffic_data if entry.get('success', False)),
+                    "last_updated": datetime.utcnow().isoformat()
+                }
             })
         else:
-            logger.warning(f"No traffic data found for campaign {campaign_id}")
+            logger.warning(f"[API] No traffic data found for campaign {campaign_id}")
             return jsonify({
                 "success": True,
-                "data": []
+                "data": [],
+                "metadata": {
+                    "total_requests": 0,
+                    "successful_requests": 0,
+                    "last_updated": datetime.utcnow().isoformat()
+                }
             })
     except Exception as e:
-        logger.error(f"Error getting campaign traffic: {str(e)}", exc_info=True)
+        logger.error(f"[API] Error getting campaign traffic: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
             "message": f"Error getting campaign traffic: {str(e)}"
         }), 500
+
+@bp.route("/download/<campaign_id>", methods=['GET'])
+def download_campaign_traffic(campaign_id: str):
+    """Download generated traffic for a specific campaign"""
+    try:
+        logger.info(f"[API] Download request for campaign {campaign_id} traffic")
+        campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
+        
+        if not os.path.exists(campaign_file):
+            logger.warning(f"[API] No traffic data found for campaign {campaign_id}")
+            return jsonify({
+                "success": False,
+                "message": "No traffic data found for campaign"
+            }), 404
+            
+        with open(campaign_file, 'r') as f:
+            traffic_data = json.load(f)
+            
+        # Add metadata to the download
+        download_data = {
+            "campaign_id": campaign_id,
+            "download_time": datetime.utcnow().isoformat(),
+            "total_requests": len(traffic_data),
+            "successful_requests": sum(1 for entry in traffic_data if entry.get('success', False)),
+            "traffic_data": traffic_data
+        }
+        
+        logger.info(f"[API] Preparing download of {len(traffic_data)} entries for campaign {campaign_id}")
+        return jsonify({
+            "success": True,
+            "data": download_data,
+            "filename": f"traffic_{campaign_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+        })
+        
+    except Exception as e:
+        logger.error(f"[API] Error preparing download: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "message": f"Error preparing download: {str(e)}"
+        }), 500
+
+@bp.route("/monitor/<campaign_id>", methods=['GET'])
+def monitor_campaign(campaign_id: str):
+    """Get real-time monitoring data for a campaign"""
+    try:
+        logger.info(f"[API] Monitoring request for campaign {campaign_id}")
+        
+        # Check if campaign is running
+        is_running = campaign_id in active_threads
+        
+        # Get campaign file path
+        campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
+        
+        # Get campaign data
+        campaign_data = {
+            "campaign_id": campaign_id,
+            "is_running": is_running,
+            "has_data": os.path.exists(campaign_file),
+            "last_updated": datetime.utcnow().isoformat()
+        }
+        
+        # Add file stats if exists
+        if os.path.exists(campaign_file):
+            try:
+                with open(campaign_file, 'r') as f:
+                    data = json.load(f)
+                    campaign_data.update({
+                        "total_requests": len(data),
+                        "successful_requests": sum(1 for req in data if req.get('success', False)),
+                        "last_request": data[-1] if data else None,
+                        "requests_per_minute": calculate_requests_per_minute(data),
+                        "success_rate": calculate_success_rate(data),
+                        "average_response_time": calculate_average_response_time(data)
+                    })
+            except Exception as e:
+                logger.error(f"[API] Error reading campaign file: {str(e)}", exc_info=True)
+        
+        logger.info(f"[API] Monitoring data for campaign {campaign_id}: {json.dumps(campaign_data, indent=2)}")
+        return jsonify({
+            "success": True,
+            "data": campaign_data
+        })
+
+    except Exception as e:
+        logger.error(f"[API] Error monitoring campaign: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "message": f"Error monitoring campaign: {str(e)}"
+        }), 500
+
+def calculate_requests_per_minute(data: List[Dict[str, Any]]) -> float:
+    """Calculate requests per minute from traffic data"""
+    if not data:
+        return 0.0
+        
+    timestamps = [datetime.fromisoformat(entry['timestamp']) for entry in data if 'timestamp' in entry]
+    if not timestamps:
+        return 0.0
+        
+    start_time = min(timestamps)
+    end_time = max(timestamps)
+    duration_minutes = (end_time - start_time).total_seconds() / 60
+    
+    return len(data) / duration_minutes if duration_minutes > 0 else 0.0
+
+def calculate_success_rate(data: List[Dict[str, Any]]) -> float:
+    """Calculate success rate from traffic data"""
+    if not data:
+        return 0.0
+        
+    successful = sum(1 for entry in data if entry.get('success', False))
+    return (successful / len(data)) * 100
+
+def calculate_average_response_time(data: List[Dict[str, Any]]) -> float:
+    """Calculate average response time from traffic data"""
+    if not data:
+        return 0.0
+        
+    response_times = [entry.get('response_time', 0) for entry in data if 'response_time' in entry]
+    return sum(response_times) / len(response_times) if response_times else 0.0
 
 @bp.route("/generated", methods=['GET'])
 def get_all_traffic():
