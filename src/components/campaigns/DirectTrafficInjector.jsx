@@ -119,9 +119,11 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
         throw new Error('At least one user profile is required');
       }
 
-      if (!campaign.profile_user_counts || Object.keys(campaign.profile_user_counts).length === 0) {
-        throw new Error('User counts must be specified for each profile');
-      }
+      // Set default user counts for each profile
+      const profile_user_counts = {};
+      campaign.user_profile_ids.forEach(profileId => {
+        profile_user_counts[profileId] = 5; // Set 5 users for each profile
+      });
 
       const config = {
         campaign_id: campaign.id,
@@ -129,7 +131,7 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
         requests_per_minute: campaign.requests_per_minute || 60,
         duration_minutes: campaign.duration_minutes || 60,
         user_profile_ids: campaign.user_profile_ids,
-        profile_user_counts: campaign.profile_user_counts,
+        profile_user_counts: profile_user_counts,
         geo_locations: campaign.geo_locations || ["United States"],
         rtb_config: campaign.rtb_config || {},
         config: campaign.config || {},
