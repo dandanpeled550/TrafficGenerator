@@ -228,119 +228,76 @@ def generate_traffic_background(config: TrafficConfig):
 
 @bp.route("/generate", methods=['POST'])
 def generate_traffic():
-    """Start traffic generation for a campaign"""
     try:
-        logger.info("[API] Received traffic generation request")
         data = request.get_json()
-        logger.info(f"[API] Request data: {json.dumps(data, indent=2)}")
-
         if not data:
-            logger.error("[API] No data provided in request")
-            return jsonify({
-                "success": False,
-                "message": "No data provided"
-            }), 400
+            return jsonify({"error": "No data provided"}), 400
 
         # Validate required fields
-        required_fields = ['campaign_id', 'target_url']
-        missing_fields = [field for field in required_fields if field not in data]
-        if missing_fields:
-            logger.error(f"[API] Missing required fields: {missing_fields}")
-            return jsonify({
-                "success": False,
-                "message": f"Missing required fields: {', '.join(missing_fields)}"
-            }), 400
+        required_fields = ['campaign_id', 'target_url', 'requests_per_minute']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Missing required field: {field}"}), 400
 
-        campaign_id = data['campaign_id']
-        logger.info(f"[API] Processing request for campaign: {campaign_id}")
+        # Validate user profiles
+        if not data.get('user_profile_ids'):
+            return jsonify({"error": "At least one user profile is required"}), 400
+
+        # Validate profile user counts
+        profile_user_counts = data.get('profile_user_counts', {})
+        if not profile_user_counts:
+            return jsonify({"error": "User counts must be specified for each profile"}), 400
+
+        total_users = sum(profile_user_counts.values())
+        if total_users == 0:
+            return jsonify({"error": "Total number of users must be greater than 0"}), 400
 
         # Check if traffic generation is already running
+        campaign_id = data['campaign_id']
         if campaign_id in active_threads:
-            logger.warning(f"[API] Traffic generation already running for campaign {campaign_id}")
-            # Attempt to clean up the existing campaign
-            logger.info(f"[API] Attempting to clean up existing campaign {campaign_id}")
-            if cleanup_campaign_resources(campaign_id):
-                logger.info(f"[API] Successfully cleaned up existing campaign {campaign_id}")
-            else:
-                logger.error(f"[API] Failed to clean up existing campaign {campaign_id}")
-                return jsonify({
-                    "success": False,
-                    "message": "Traffic generation already running for this campaign"
-                }), 409
-
-        # Create TrafficConfig object
-        try:
-            logger.info(f"[API] Creating TrafficConfig for campaign {campaign_id}")
-            config = TrafficConfig(
-                campaign_id=campaign_id,
-                target_url=data['target_url'],
-                requests_per_minute=data.get('requests_per_minute', 10),
-                duration_minutes=data.get('duration_minutes', 60),
-                geo_locations=data.get('geo_locations', ['United States']),
-                rtb_config=data.get('rtb_config', {}),
-                config=data.get('config', {})
-            )
-            logger.info(f"[API] Created TrafficConfig: {json.dumps(config.to_dict(), indent=2)}")
-        except Exception as e:
-            logger.error(f"[API] Error creating TrafficConfig: {str(e)}", exc_info=True)
             return jsonify({
-                "success": False,
-                "message": f"Invalid configuration: {str(e)}"
-            }), 400
+                "error": "Traffic generation is already running for this campaign",
+                "status": "running"
+            }), 409
 
-        # Validate configuration
-        if config.requests_per_minute <= 0:
-            logger.error(f"[API] Invalid requests_per_minute: {config.requests_per_minute}")
-            return jsonify({
-                "success": False,
-                "message": "Requests per minute must be greater than 0"
-            }), 400
-        
-        if config.duration_minutes is not None and config.duration_minutes <= 0:
-            logger.error(f"[API] Invalid duration_minutes: {config.duration_minutes}")
-            return jsonify({
-                "success": False,
-                "message": "Duration must be greater than 0"
-            }), 400
+        # Create traffic config
+        config = TrafficConfig(
+            campaign_id=campaign_id,
+            target_url=data['target_url'],
+            requests_per_minute=data['requests_per_minute'],
+            duration_minutes=data.get('duration_minutes'),
+            user_profile_ids=data['user_profile_ids'],
+            profile_user_counts=profile_user_counts,
+            total_profile_users=total_users,
+            log_file_path=data.get('log_file_path'),
+            log_level=data.get('log_level'),
+            log_format=data.get('log_format')
+        )
 
-        # Create campaign-specific directory if it doesn't exist
-        campaign_dir = os.path.join(TRAFFIC_DATA_DIR, campaign_id)
-        logger.info(f"[API] Creating campaign directory: {campaign_dir}")
-        os.makedirs(campaign_dir, exist_ok=True)
-        logger.info(f"[API] Campaign directory created/verified")
-
-        # Initialize thread lock
-        logger.info(f"[API] Initializing thread lock for campaign {campaign_id}")
-        thread_locks[campaign_id] = Lock()
-
-        # Start traffic generation in background thread
-        logger.info(f"[API] Starting traffic generation thread for campaign {campaign_id}")
-        thread = threading.Thread(target=generate_traffic_background, args=(config,))
-        thread.daemon = True
+        # Start traffic generation in background
+        thread = threading.Thread(
+            target=generate_traffic_background,
+            args=(config,),
+            daemon=True
+        )
         thread.start()
-        logger.info(f"[API] Traffic generation thread started successfully")
-        
-        # Return a proper response object
-        response_data = {
-            "success": True,
+
+        # Store thread reference
+        active_threads[campaign_id] = thread.ident
+        thread_locks[campaign_id] = threading.Lock()
+
+        # Update campaign status
+        update_campaign_status(campaign_id, "running")
+
+        return jsonify({
             "message": "Traffic generation started",
-            "data": {
-                "campaign_id": campaign_id,
-                "requests_per_minute": config.requests_per_minute,
-                "duration_minutes": config.duration_minutes,
-                "status": "running",
-                "start_time": datetime.utcnow().isoformat()
-            }
-        }
-        logger.info(f"[API] Sending response: {json.dumps(response_data, indent=2)}")
-        return jsonify(response_data)
+            "campaign_id": campaign_id,
+            "status": "running"
+        })
 
     except Exception as e:
-        logger.error(f"[API] Error generating traffic: {str(e)}", exc_info=True)
-        return jsonify({
-            "success": False,
-            "message": f"Internal server error: {str(e)}"
-        }), 500
+        logger.error(f"Error starting traffic generation: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
     """Generate a single traffic data entry"""

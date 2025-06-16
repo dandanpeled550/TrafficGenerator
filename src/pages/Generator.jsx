@@ -184,7 +184,20 @@ export default function Generator() {
     setIsCreating(true);
 
     try {
+      // Validate user profiles
+      if (!formData.user_profile_ids || formData.user_profile_ids.length === 0) {
+        alert("Please select at least one user profile before creating a campaign.");
+        setIsCreating(false);
+        return;
+      }
+
+      // Validate total users
       const totalUsersFromProfiles = Object.values(profileUserCounts).reduce((sum, count) => sum + count, 0);
+      if (totalUsersFromProfiles === 0) {
+        alert("Please set the number of users for at least one profile.");
+        setIsCreating(false);
+        return;
+      }
 
       const sessionData = {
         ...formData,
@@ -218,333 +231,242 @@ export default function Generator() {
     setIsCreating(false);
   };
 
-  const getTotalUsers = () => {
-    return Object.values(profileUserCounts).reduce((sum, count) => sum + count, 0);
+  // Add validation for user profiles
+  const validateUserProfiles = () => {
+    if (!formData.user_profile_ids || formData.user_profile_ids.length === 0) {
+      return {
+        isValid: false,
+        message: "Please select at least one user profile"
+      };
+    }
+
+    const totalUsers = Object.values(profileUserCounts).reduce((sum, count) => sum + count, 0);
+    if (totalUsers === 0) {
+      return {
+        isValid: false,
+        message: "Please set the number of users for at least one profile"
+      };
+    }
+
+    return {
+      isValid: true,
+      message: ""
+    };
   };
+
+  // Add profile selection section
+  const renderProfileSelection = () => (
+    <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
+      <CardHeader>
+        <CardTitle className="text-lg font-semibold text-white flex items-center gap-2">
+          <UsersIcon className="w-5 h-5 text-purple-400" />
+          User Profiles
+        </CardTitle>
+        <p className="text-sm text-slate-400">
+          Select user profiles and set the number of users for each profile
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          {allUserProfiles.map(profile => (
+            <div key={profile.id} className="flex items-center justify-between p-4 bg-slate-800/30 rounded-lg border border-slate-700">
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={formData.user_profile_ids.includes(profile.id)}
+                  onCheckedChange={(checked) => {
+                    const newIds = checked
+                      ? [...formData.user_profile_ids, profile.id]
+                      : formData.user_profile_ids.filter(id => id !== profile.id);
+                    setFormData(prev => ({
+                      ...prev,
+                      user_profile_ids: newIds
+                    }));
+                  }}
+                />
+                <div>
+                  <p className="font-medium text-white">{profile.name}</p>
+                  <p className="text-sm text-slate-400">{profile.description}</p>
+                </div>
+              </div>
+              {formData.user_profile_ids.includes(profile.id) && (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min="0"
+                    value={profileUserCounts[profile.id] || 0}
+                    onChange={(e) => {
+                      const count = parseInt(e.target.value) || 0;
+                      setProfileUserCounts(prev => ({
+                        ...prev,
+                        [profile.id]: count
+                      }));
+                    }}
+                    className="w-24 bg-slate-800 border-slate-700 text-white"
+                  />
+                  <span className="text-slate-400">users</span>
+                </div>
+              )}
+            </div>
+          ))}
+          {allUserProfiles.length === 0 && (
+            <div className="text-center p-4 bg-slate-800/30 rounded-lg border border-slate-700">
+              <p className="text-slate-400">No user profiles available</p>
+              <Button
+                onClick={() => navigate(createPageUrl("UserProfiles"))}
+                variant="outline"
+                className="mt-2"
+              >
+                Create User Profile
+              </Button>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
 
   return (
     <div className="min-h-screen p-6">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-7xl mx-auto space-y-6">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
         >
-          <div className="flex items-center gap-4 mb-4">
-            <Link
-              to={createPageUrl("Dashboard")}
-              className="text-slate-400 hover:text-white transition-colors"
+          <div>
+            <h1 className="text-4xl font-bold text-white mb-2">
+              {isEditing ? "Edit Campaign" : "Create Campaign"}
+            </h1>
+            <p className="text-slate-400 text-lg">
+              {isEditing
+                ? "Modify your existing traffic generation campaign"
+                : "Set up a new traffic generation campaign"}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => navigate(createPageUrl("Campaigns"))}
+              variant="outline"
+              className="border-slate-700 hover:bg-slate-800 text-slate-300"
             >
-              <ArrowLeft className="w-6 h-6" />
-            </Link>
-            <div>
-              <h1 className="text-4xl font-bold text-white">
-                {isEditing ? 'Edit Campaign' : 'Traffic Generator'}
-              </h1>
-              <p className="text-slate-400 text-lg">
-                {isEditing ? 'Modify your RTB traffic campaign' : 'Create and configure RTB traffic campaigns'}
-              </p>
-            </div>
+              Cancel
+            </Button>
           </div>
         </motion.div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-          {/* Left Column - Configuration */}
-          <div className="space-y-6">
-            {/* Campaign Name & Target */}
-            <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
-              <CardHeader className="border-b border-slate-800">
-                <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
-                  <Target className="w-5 h-5 text-blue-400" />
-                  Campaign Configuration
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-6 space-y-4">
-                <div>
-                  <Label htmlFor="name" className="text-slate-300 font-semibold">Campaign Name</Label>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {/* Basic Information */}
+          <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
+            <CardHeader>
+              <CardTitle className="text-lg font-semibold text-white flex items-center gap-2">
+                <Wand2 className="w-5 h-5 text-blue-400" />
+                Basic Information
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-slate-300">Campaign Name</Label>
                   <Input
-                    id="name"
                     value={formData.name}
                     onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                    placeholder="Enter campaign name..."
-                    className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-400"
+                    placeholder="Enter campaign name"
+                    className="bg-slate-800/50 border-slate-700 text-white"
                     required
                   />
                 </div>
-                <div>
-                  <Label htmlFor="target_url" className="text-slate-300 font-semibold">Target URL</Label>
+                <div className="space-y-2">
+                  <Label className="text-slate-300">Target URL</Label>
                   <Input
-                    id="target_url"
-                    type="url"
                     value={formData.target_url}
                     onChange={(e) => setFormData(prev => ({ ...prev, target_url: e.target.value }))}
-                    placeholder="https://example.com"
-                    className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-400"
+                    placeholder="Enter target URL"
+                    className="bg-slate-800/50 border-slate-700 text-white"
                     required
                   />
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </CardContent>
+          </Card>
 
-            {/* RTB Configuration */}
-            <RTBConfigCard
-              formData={formData}
-              onInputChange={(field, value) => setFormData(prev => {
-                const keys = field.split('.');
-                if (keys.length === 2) {
-                  return {
-                    ...prev,
-                    [keys[0]]: {
-                      ...prev[keys[0]],
-                      [keys[1]]: value
-                    }
-                  };
-                }
-                return { ...prev, [field]: value };
-              })}
-              profilesSelected={formData.user_profile_ids.length > 0}
-            />
+          {/* User Profiles Section */}
+          {renderProfileSelection()}
 
-            {/* Traffic Settings */}
-            <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
-              <CardHeader className="border-b border-slate-800">
-                <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-purple-400" />
-                  Traffic Settings
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-6 space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="requests_per_minute" className="text-slate-300 font-semibold">Requests per Minute</Label>
+          {/* Traffic Settings */}
+          <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
+            <CardHeader>
+              <CardTitle className="text-lg font-semibold text-white flex items-center gap-2">
+                <Zap className="w-5 h-5 text-yellow-400" />
+                Traffic Settings
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-slate-300">Requests per Minute</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={formData.requests_per_minute}
+                    onChange={(e) => setFormData(prev => ({ ...prev, requests_per_minute: parseInt(e.target.value) || 10 }))}
+                    className="bg-slate-800/50 border-slate-700 text-white"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-slate-300">Duration (minutes)</Label>
+                  <div className="flex items-center gap-2">
                     <Input
-                      id="requests_per_minute"
                       type="number"
-                      value={formData.requests_per_minute}
-                      onChange={(e) => setFormData(prev => ({ ...prev, requests_per_minute: parseInt(e.target.value) || 10 }))}
-                      className="bg-slate-800/50 border-slate-700 text-white"
                       min="1"
-                      max="1000"
+                      value={formData.duration_minutes}
+                      onChange={(e) => setFormData(prev => ({ ...prev, duration_minutes: parseInt(e.target.value) || 60 }))}
+                      className="bg-slate-800/50 border-slate-700 text-white"
+                      disabled={runIndefinitely}
+                      required={!runIndefinitely}
                     />
-                  </div>
-                  <div>
-                    <Label htmlFor="duration_minutes" className="text-slate-300 font-semibold">Duration (minutes)</Label>
                     <div className="flex items-center gap-2">
-                      <Input
-                        id="duration_minutes"
-                        type="number"
-                        value={runIndefinitely ? "" : (formData.duration_minutes || '')}
-                        onChange={(e) => setFormData(prev => ({ ...prev, duration_minutes: parseInt(e.target.value) || 60 }))}
-                        className="bg-slate-800/50 border-slate-700 text-white"
-                        disabled={runIndefinitely}
-                        min="1"
-                        placeholder="60"
+                      <Switch
+                        checked={runIndefinitely}
+                        onCheckedChange={setRunIndefinitely}
                       />
-                      <div className="flex items-center space-x-2">
-                        <Switch
-                          id="run_indefinitely_toggle"
-                          checked={runIndefinitely}
-                          onCheckedChange={(value) => {
-                            setRunIndefinitely(value);
-                            if (value) {
-                              setFormData(prev => ({ ...prev, duration_minutes: null }));
-                            } else {
-                              setFormData(prev => ({ ...prev, duration_minutes: prev.duration_minutes || 60 }));
-                            }
-                          }}
-                        />
-                        <InfinityIcon className="w-4 h-4 text-slate-400" />
-                      </div>
+                      <span className="text-slate-400">Run indefinitely</span>
                     </div>
                   </div>
                 </div>
+              </div>
+            </CardContent>
+          </Card>
 
-                <div>
-                  <Label className="text-slate-300 font-semibold mb-2 block">Geographic Locations</Label>
-                  <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto pr-2">
-                    {GEO_LOCATIONS.map((location) => (
-                      <div key={location} className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`geo-${location}`}
-                          checked={formData.geo_locations.includes(location)}
-                          onCheckedChange={(checked) => {
-                            setFormData(prev => ({
-                              ...prev,
-                              geo_locations: checked
-                                ? [...prev.geo_locations, location]
-                                : prev.geo_locations.filter(l => l !== location)
-                            }));
-                          }}
-                        />
-                        <Label htmlFor={`geo-${location}`} className="text-slate-300 text-sm">{location}</Label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* User Profiles */}
-            <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
-              <CardHeader className="border-b border-slate-800 flex flex-row items-center justify-between">
-                <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
-                  <UsersIcon className="w-5 h-5 text-emerald-400" />
-                  User Profiles ({formData.user_profile_ids.length} selected)
-                </CardTitle>
-                {getTotalUsers() > 0 && (
-                  <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
-                    {getTotalUsers()} Total Users
-                  </Badge>
-                )}
-              </CardHeader>
-              <CardContent className="p-6">
-                {allUserProfiles.length === 0 ? (
-                  <div className="text-center py-8">
-                    <p className="text-slate-400 mb-4">No user profiles available</p>
-                    <Link to={createPageUrl("UserProfiles")}>
-                      <Button variant="outline" className="border-slate-700 hover:bg-slate-800">
-                        Create User Profiles
-                      </Button>
-                    </Link>
-                  </div>
-                ) : (
-                  <ScrollArea className="h-64">
-                    <div className="space-y-3 pr-2">
-                      {allUserProfiles.map((profile) => (
-                        <div key={profile.id} className="flex items-center justify-between p-3 bg-slate-800/30 rounded-lg border border-slate-700">
-                          <div className="flex items-center space-x-3">
-                            <Checkbox
-                              id={`profile-${profile.id}`}
-                              checked={formData.user_profile_ids.includes(profile.id)}
-                              onCheckedChange={(checked) => {
-                                setFormData(prev => {
-                                  const newProfileIds = checked
-                                    ? [...prev.user_profile_ids, profile.id]
-                                    : prev.user_profile_ids.filter(id => id !== profile.id);
-
-                                  // Update profileUserCounts
-                                  setProfileUserCounts(prevCounts => {
-                                    const updatedCounts = { ...prevCounts };
-                                    if (checked) {
-                                      updatedCounts[profile.id] = updatedCounts[profile.id] || 100;
-                                    } else {
-                                      delete updatedCounts[profile.id];
-                                    }
-                                    return updatedCounts;
-                                  });
-
-                                  return { ...prev, user_profile_ids: newProfileIds };
-                                });
-                              }}
-                              className="border-slate-600 data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
-                            />
-                            <div>
-                              <Label
-                                htmlFor={`profile-${profile.id}`}
-                                className="text-slate-300 font-medium cursor-pointer block"
-                              >
-                                {profile.name}
-                              </Label>
-                              <p className="text-xs text-slate-400">
-                                {profile.demographics?.age_group || 'Any age'} • {profile.demographics?.gender || 'Any gender'}
-                              </p>
-                            </div>
-                          </div>
-                          {formData.user_profile_ids.includes(profile.id) && (
-                            <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30">
-                              {profileUserCounts[profile.id] || 100} users
-                            </Badge>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Logging Configuration */}
-            <TrafficLoggingCard
-              formData={formData}
-              onInputChange={(field, value) => setFormData(prev => {
-                const keys = field.split('.');
-                if (keys.length === 2) {
-                  return {
-                    ...prev,
-                    [keys[0]]: {
-                      ...prev[keys[0]],
-                      [keys[1]]: value
-                    }
-                  };
-                }
-                return { ...prev, [field]: value };
-              })}
-            />
-          </div>
-
-          {/* Right Column - Preview & Controls */}
-          <div className="space-y-6">
-            {/* Traffic Simulation Preview */}
-            <TrafficSimulationPreview formData={formData} />
-
-            {/* RTB Data Preview */}
-            <RTBDataPreview
-              formData={formData}
-              isVisible={true}
-              selectedProfiles={allUserProfiles.filter(p => formData.user_profile_ids.includes(p.id))}
-            />
-
-            {/* Submit Button */}
-            <Card className="bg-gradient-to-r from-blue-900/30 to-purple-900/30 border-blue-800/50">
-              <CardContent className="p-6">
-                <Button
-                  onClick={handleSubmit}
-                  disabled={isCreating || !formData.name || !formData.target_url}
-                  className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-3"
-                >
-                  {isCreating ? (
-                    <>
-                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                      {isEditing ? 'Updating Campaign...' : 'Creating Campaign...'}
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-5 h-5 mr-2" />
-                      {isEditing ? 'Update Campaign' : 'Create Campaign'}
-                    </>
-                  )}
-                </Button>
-
-                {isEditing && (
-                  <Button
-                    onClick={() => navigate(createPageUrl("Campaigns"))}
-                    variant="outline"
-                    className="w-full mt-3 border-slate-700 hover:bg-slate-800 text-slate-300"
-                  >
-                    Cancel Editing
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Run Immediately Checkbox */}
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="runImmediately"
-                checked={runOnSubmit}
-                onCheckedChange={setRunOnSubmit}
-                className="border-slate-700 data-[state=checked]:bg-blue-500 data-[state=checked]:text-white"
-              />
-              <label
-                htmlFor="runImmediately"
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 text-slate-300"
+          {/* Submit Button */}
+          <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
+            <CardContent className="p-6">
+              <Button
+                type="submit"
+                disabled={isCreating || !formData.name || !formData.target_url || !validateUserProfiles().isValid}
+                className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-3"
               >
-                Run campaign immediately after creation
-              </label>
-            </div>
-          </div>
-        </div>
+                {isCreating ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    {isEditing ? 'Updating Campaign...' : 'Creating Campaign...'}
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-5 h-5 mr-2" />
+                    {isEditing ? 'Update Campaign' : 'Create Campaign'}
+                  </>
+                )}
+              </Button>
+              {!validateUserProfiles().isValid && (
+                <p className="text-red-400 text-sm mt-2 text-center">
+                  {validateUserProfiles().message}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </form>
       </div>
     </div>
   );
