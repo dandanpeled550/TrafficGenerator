@@ -127,11 +127,20 @@ const CampaignCard = ({ campaign, onDelete, onStatusChange, allProfiles }) => {
 
   const startTrafficGeneration = async (campaign) => {
     try {
+      // Validate required fields
+      if (!campaign.user_profile_ids || campaign.user_profile_ids.length === 0) {
+        throw new Error('At least one user profile is required');
+      }
+
+      if (!campaign.profile_user_counts || Object.keys(campaign.profile_user_counts).length === 0) {
+        throw new Error('User counts must be specified for each profile');
+      }
+
       const config = {
         campaign_id: campaign.id,
         target_url: campaign.target_url,
-        requests_per_minute: campaign.requests_per_minute,
-        duration_minutes: campaign.duration_minutes,
+        requests_per_minute: campaign.requests_per_minute || 60,
+        duration_minutes: campaign.duration_minutes || 60,
         user_profile_ids: campaign.user_profile_ids,
         profile_user_counts: campaign.profile_user_counts,
         geo_locations: campaign.geo_locations || ["United States"],
@@ -144,6 +153,7 @@ const CampaignCard = ({ campaign, onDelete, onStatusChange, allProfiles }) => {
 
       console.log('Starting traffic generation with config:', JSON.stringify(config, null, 2));
 
+      // Use backendClient instead of direct fetch
       const response = await backendClient.traffic.generate(config);
 
       if (!response.success) {
@@ -170,6 +180,7 @@ const CampaignCard = ({ campaign, onDelete, onStatusChange, allProfiles }) => {
         )
       );
 
+      // Start monitoring after successful start
       await startMonitoring();
     } catch (error) {
       console.error('Error starting traffic generation:', error);
