@@ -257,10 +257,16 @@ def generate_traffic():
         # Check if traffic generation is already running
         if campaign_id in active_threads:
             logger.warning(f"[API] Traffic generation already running for campaign {campaign_id}")
-            return jsonify({
-                "success": False,
-                "message": "Traffic generation already running for this campaign"
-            }), 409
+            # Attempt to clean up the existing campaign
+            logger.info(f"[API] Attempting to clean up existing campaign {campaign_id}")
+            if cleanup_campaign_resources(campaign_id):
+                logger.info(f"[API] Successfully cleaned up existing campaign {campaign_id}")
+            else:
+                logger.error(f"[API] Failed to clean up existing campaign {campaign_id}")
+                return jsonify({
+                    "success": False,
+                    "message": "Traffic generation already running for this campaign"
+                }), 409
 
         # Create TrafficConfig object
         try:
@@ -560,103 +566,88 @@ def get_campaign_stats(campaign_id: str):
         }), 500
 
 def cleanup_campaign_resources(campaign_id: str):
-    """Clean up resources for a campaign"""
+    """Clean up all resources associated with a campaign"""
     try:
-        logger.info(f"Cleaning up resources for campaign {campaign_id}")
+        logger.info(f"[Cleanup] Starting cleanup for campaign {campaign_id}")
         
         # Remove from active threads
         if campaign_id in active_threads:
+            logger.info(f"[Cleanup] Removing campaign {campaign_id} from active threads")
             del active_threads[campaign_id]
-            logger.info(f"Removed campaign {campaign_id} from active threads")
-
+        
         # Clean up thread lock
         if campaign_id in thread_locks:
+            logger.info(f"[Cleanup] Removing thread lock for campaign {campaign_id}")
             del thread_locks[campaign_id]
-            logger.info(f"Cleaned up thread lock for campaign {campaign_id}")
-
-        # Update campaign status
-        update_campaign_status(campaign_id, "cleaned", {
+        
+        # Update campaign status to stopped
+        logger.info(f"[Cleanup] Updating campaign status to stopped")
+        update_campaign_status(campaign_id, "stopped", {
+            "end_time": datetime.utcnow().isoformat(),
             "cleanup_time": datetime.utcnow().isoformat()
         })
-
-        logger.info(f"Successfully cleaned up resources for campaign {campaign_id}")
+        
+        logger.info(f"[Cleanup] Successfully cleaned up resources for campaign {campaign_id}")
         return True
-
     except Exception as e:
-        logger.error(f"Error cleaning up campaign resources: {str(e)}", exc_info=True)
+        logger.error(f"[Cleanup] Error cleaning up campaign resources: {str(e)}", exc_info=True)
         return False
 
 @bp.route("/cleanup/<campaign_id>", methods=['POST'])
 def cleanup_campaign(campaign_id: str):
     """Clean up campaign resources"""
     try:
-        logger.info(f"Received cleanup request for campaign {campaign_id}")
+        logger.info(f"[API] Received cleanup request for campaign {campaign_id}")
         
         if cleanup_campaign_resources(campaign_id):
+            logger.info(f"[API] Successfully cleaned up campaign {campaign_id}")
             return jsonify({
                 "success": True,
-                "message": "Campaign resources cleaned up successfully",
-                "data": {
-                    "campaign_id": campaign_id,
-                    "status": "cleaned",
-                    "cleanup_time": datetime.utcnow().isoformat()
-                }
+                "message": "Campaign resources cleaned up successfully"
             })
         else:
+            logger.error(f"[API] Failed to clean up campaign {campaign_id}")
             return jsonify({
                 "success": False,
                 "message": "Failed to clean up campaign resources"
             }), 500
-
+            
     except Exception as e:
-        logger.error(f"Error in cleanup endpoint: {str(e)}", exc_info=True)
+        logger.error(f"[API] Error cleaning up campaign: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
             "message": f"Error cleaning up campaign: {str(e)}"
         }), 500
 
 @bp.route("/stop/<campaign_id>", methods=['POST'])
-def stop_traffic_generation(campaign_id: str):
+def stop_traffic(campaign_id: str):
     """Stop traffic generation for a campaign"""
     try:
-        logger.info(f"Received stop request for campaign {campaign_id}")
+        logger.info(f"[API] Received stop request for campaign {campaign_id}")
         
-        # Check if campaign is running
         if campaign_id not in active_threads:
-            logger.warning(f"No active traffic generation found for campaign {campaign_id}")
+            logger.warning(f"[API] No active traffic generation found for campaign {campaign_id}")
             return jsonify({
                 "success": False,
                 "message": "No active traffic generation found for this campaign"
             }), 404
-
-        # Remove from active threads to signal stop
-        thread_id = active_threads.pop(campaign_id, None)
-        logger.info(f"Removed campaign {campaign_id} from active threads")
-
-        # Update campaign status
-        update_campaign_status(campaign_id, "stopped", {
-            "end_time": datetime.utcnow().isoformat(),
-            "stopped_by": "user"
-        })
-
-        # Clean up thread lock
-        if campaign_id in thread_locks:
-            del thread_locks[campaign_id]
-            logger.info(f"Cleaned up thread lock for campaign {campaign_id}")
-
-        logger.info(f"Successfully stopped traffic generation for campaign {campaign_id}")
-        return jsonify({
-            "success": True,
-            "message": "Traffic generation stopped",
-            "data": {
-                "campaign_id": campaign_id,
-                "status": "stopped",
-                "end_time": datetime.utcnow().isoformat()
-            }
-        })
-
+        
+        logger.info(f"[API] Stopping traffic generation for campaign {campaign_id}")
+        if cleanup_campaign_resources(campaign_id):
+            logger.info(f"[API] Successfully stopped traffic generation for campaign {campaign_id}")
+            return jsonify({
+                "success": True,
+                "message": "Traffic generation stopped successfully"
+            })
+        else:
+            logger.error(f"[API] Failed to stop traffic generation for campaign {campaign_id}")
+            return jsonify({
+                "success": False,
+                "message": "Failed to stop traffic generation"
+            }), 500
+            
     except Exception as e:
-        logger.error(f"Error stopping traffic generation: {str(e)}", exc_info=True)
+        logger.error(f"[API] Error stopping traffic generation: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
             "message": f"Error stopping traffic generation: {str(e)}"
