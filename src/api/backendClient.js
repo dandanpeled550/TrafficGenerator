@@ -29,11 +29,10 @@ const backendClient = {
     generate: async (config) => {
       try {
         console.log('Starting traffic generation with config:', config);
-        const response = await fetch('/api/traffic/generate', {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/traffic/generate`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: defaultHeaders,
+          credentials: "include",
           body: JSON.stringify(config),
         });
         return await handleResponse(response);
@@ -45,8 +44,10 @@ const backendClient = {
     stop: async (campaignId) => {
       try {
         console.log('Stopping traffic generation for campaign:', campaignId);
-        const response = await fetch(`/api/traffic/stop/${campaignId}`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/traffic/stop/${campaignId}`, {
           method: 'POST',
+          headers: defaultHeaders,
+          credentials: "include",
         });
         return await handleResponse(response);
       } catch (error) {
@@ -57,7 +58,10 @@ const backendClient = {
     getStatus: async (campaignId) => {
       try {
         console.log('Getting status for campaign:', campaignId);
-        const response = await fetch(`/api/traffic/status/${campaignId}`);
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/traffic/status/${campaignId}`, {
+          headers: defaultHeaders,
+          credentials: "include",
+        });
         return await handleResponse(response);
       } catch (error) {
         console.error('Error getting campaign status:', error);
@@ -67,10 +71,13 @@ const backendClient = {
     getGenerated: async (campaignId = null) => {
       try {
         const url = campaignId 
-          ? `/api/traffic/generated/${campaignId}`
-          : '/api/traffic/generated';
+          ? `${import.meta.env.VITE_API_URL}/api/traffic/generated/${campaignId}`
+          : `${import.meta.env.VITE_API_URL}/api/traffic/generated`;
         console.log('Fetching generated traffic:', url);
-        const response = await fetch(url);
+        const response = await fetch(url, {
+          headers: defaultHeaders,
+          credentials: "include",
+        });
         return await handleResponse(response);
       } catch (error) {
         console.error('Error fetching generated traffic:', error);
@@ -80,7 +87,10 @@ const backendClient = {
     getStats: async (campaignId) => {
       try {
         console.log('Getting stats for campaign:', campaignId);
-        const response = await fetch(`/api/traffic/stats/${campaignId}`);
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/traffic/stats/${campaignId}`, {
+          headers: defaultHeaders,
+          credentials: "include",
+        });
         return await handleResponse(response);
       } catch (error) {
         console.error('Error getting campaign stats:', error);
@@ -90,7 +100,10 @@ const backendClient = {
     checkHealth: async () => {
       try {
         console.log('Checking backend health');
-        const response = await fetch('/api/traffic/health');
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/traffic/health`, {
+          headers: defaultHeaders,
+          credentials: "include",
+        });
         return await handleResponse(response);
       } catch (error) {
         console.error('Error checking backend health:', error);
