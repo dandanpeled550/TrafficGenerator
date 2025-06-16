@@ -95,17 +95,6 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
             return;
         }
 
-        if (!response.data || !response.data.campaign_id) {
-            console.error(`[Injector] Invalid response data format for campaign ${campaign.id}:`, response);
-            setError("Invalid response data format from backend");
-            clearInterval(intervalRef.current);
-            setIsInjecting(false);
-            return;
-        }
-
-        console.log(`[Injector] Successfully started traffic generation for campaign ${campaign.id}`);
-        console.log(`[Injector] Campaign status:`, response.data);
-
         // Get the generated traffic data
         console.log(`[Injector] Fetching generated traffic data for campaign ${campaign.id}`);
         const trafficData = await backendClient.traffic.getGenerated(campaign.id);
