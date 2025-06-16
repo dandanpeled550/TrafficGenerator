@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import backendClient from "@/api/backendClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -46,6 +46,213 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+
+const CampaignCard = ({ campaign, onDelete, onStatusChange }) => {
+  const [isInjecting, setIsInjecting] = useState(false);
+  const [error, setError] = useState(null);
+  const [monitoringData, setMonitoringData] = useState({
+    total_requests: 0,
+    successful_requests: 0,
+    requests_per_minute: 0,
+    success_rate: 0,
+    average_response_time: 0,
+    last_updated: null
+  });
+  const monitoringIntervalRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (monitoringIntervalRef.current) {
+        clearInterval(monitoringIntervalRef.current);
+      }
+    };
+  }, []);
+
+  const startMonitoring = async () => {
+    const fetchMonitoringData = async () => {
+      try {
+        const response = await backendClient.traffic.monitor(campaign.id);
+        if (response.success && response.data) {
+          setMonitoringData({
+            total_requests: response.data.total_requests || 0,
+            successful_requests: response.data.successful_requests || 0,
+            requests_per_minute: response.data.requests_per_minute || 0,
+            success_rate: response.data.success_rate || 0,
+            average_response_time: response.data.average_response_time || 0,
+            last_updated: response.data.last_updated
+          });
+        }
+      } catch (error) {
+        console.error(`[Monitor] Error fetching monitoring data:`, error);
+      }
+    };
+
+    await fetchMonitoringData();
+    monitoringIntervalRef.current = setInterval(fetchMonitoringData, 2000);
+  };
+
+  const stopMonitoring = () => {
+    if (monitoringIntervalRef.current) {
+      clearInterval(monitoringIntervalRef.current);
+      monitoringIntervalRef.current = null;
+    }
+  };
+
+  const startTrafficGeneration = async () => {
+    setIsInjecting(true);
+    setError(null);
+
+    try {
+      // Check backend health
+      const healthCheck = await backendClient.traffic.checkHealth();
+      if (!healthCheck.success || healthCheck.status !== 'healthy') {
+        throw new Error(healthCheck.error || "Backend health check failed");
+      }
+
+      // Update campaign status
+      await backendClient.sessions.update(campaign.id, {
+        status: 'running',
+        start_time: new Date().toISOString(),
+      });
+
+      // Start traffic generation
+      const response = await backendClient.traffic.generate({
+        campaign_id: campaign.id,
+        target_url: campaign.target_url,
+        requests_per_minute: campaign.requests_per_minute || 60,
+        duration_minutes: campaign.duration_minutes || 60,
+        user_profile_ids: campaign.user_profile_ids || [],
+        profile_user_counts: campaign.profile_user_counts || {},
+        geo_locations: campaign.geo_locations || ["United States"],
+        rtb_config: campaign.rtb_config || {},
+        config: {
+          ...campaign.config,
+          randomize_timing: true,
+          success_rate: 0.85
+        }
+      });
+
+      if (!response.success) {
+        throw new Error(response.message || "Failed to start traffic generation");
+      }
+
+      // Start monitoring
+      await startMonitoring();
+      onStatusChange(campaign.id, 'running');
+    } catch (error) {
+      console.error(`[Injector] Error:`, error);
+      setError(`Failed to start traffic generation: ${error.message}`);
+      setIsInjecting(false);
+      stopMonitoring();
+    }
+  };
+
+  const stopTrafficGeneration = async () => {
+    stopMonitoring();
+    setIsInjecting(false);
+    try {
+      await backendClient.sessions.update(campaign.id, {
+        status: 'stopped',
+        end_time: new Date().toISOString()
+      });
+      onStatusChange(campaign.id, 'stopped');
+    } catch (error) {
+      console.error(`[Injector] Error stopping traffic generation:`, error);
+      setError(`Failed to stop traffic generation: ${error.message}`);
+    }
+  };
+
+  return (
+    <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-lg font-semibold text-white">
+          {campaign.name}
+        </CardTitle>
+        <Badge className={getStatusColor(campaign.status)}>
+          {campaign.status}
+        </Badge>
+      </CardHeader>
+      <CardContent>
+        {error && (
+          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+            <p className="text-red-400 text-sm">{error}</p>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          {/* Campaign Info */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <p className="text-sm text-slate-400">Target URL</p>
+              <p className="text-white truncate">{campaign.target_url}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm text-slate-400">Profiles</p>
+              <p className="text-white">{getProfileNames(campaign.user_profile_ids)}</p>
+            </div>
+          </div>
+
+          {/* Monitoring Stats */}
+          {isInjecting && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-slate-800/50 p-3 rounded-lg">
+                <p className="text-slate-400 text-sm">Total Requests</p>
+                <p className="text-white text-xl font-semibold">{monitoringData.total_requests}</p>
+              </div>
+              <div className="bg-slate-800/50 p-3 rounded-lg">
+                <p className="text-slate-400 text-sm">Success Rate</p>
+                <p className="text-white text-xl font-semibold">{monitoringData.success_rate.toFixed(1)}%</p>
+              </div>
+              <div className="bg-slate-800/50 p-3 rounded-lg">
+                <p className="text-slate-400 text-sm">Requests/Min</p>
+                <p className="text-white text-xl font-semibold">{monitoringData.requests_per_minute.toFixed(1)}</p>
+              </div>
+              <div className="bg-slate-800/50 p-3 rounded-lg">
+                <p className="text-slate-400 text-sm">Avg Response</p>
+                <p className="text-white text-xl font-semibold">{monitoringData.average_response_time.toFixed(0)}ms</p>
+              </div>
+            </div>
+          )}
+
+          {/* Control Buttons */}
+          <div className="flex justify-end gap-2">
+            {!isInjecting ? (
+              <Button
+                onClick={startTrafficGeneration}
+                className="bg-green-600 hover:bg-green-700 text-white"
+                disabled={campaign.status === 'running'}
+              >
+                <Play className="w-4 h-4 mr-2" />
+                Start Traffic
+              </Button>
+            ) : (
+              <Button
+                onClick={stopTrafficGeneration}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                <Square className="w-4 h-4 mr-2" />
+                Stop Traffic
+              </Button>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon">
+                  <MoreVertical className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => onDelete(campaign)}>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
 
 export default function CampaignsPage() {
   const navigate = useNavigate();
@@ -323,183 +530,11 @@ export default function CampaignsPage() {
                   )}
 
                   {/* Main Campaign Card */}
-                  <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm hover:border-slate-700 transition-all duration-300">
-                    <CardHeader className="border-b border-slate-800">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-3 mb-2">
-                            <CardTitle className="text-xl font-bold text-white truncate">
-                              {campaign.name}
-                            </CardTitle>
-                            <Badge className={`border ${getStatusColor(campaign.status)}`}>
-                              {campaign.status}
-                            </Badge>
-                            <Badge className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30">
-                              RTB
-                            </Badge>
-                          </div>
-                          <p className="text-slate-400 truncate">{campaign.target_url}</p>
-                        </div>
-                        
-                        <div className="flex items-center gap-2">
-                          {/* Status Control Buttons */}
-                          {campaign.status === 'draft' || campaign.status === 'paused' ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleStatusChange(campaign.id, 'running')}
-                              className="border-green-700 text-green-400 hover:bg-green-900/20"
-                            >
-                              <Play className="w-4 h-4 mr-1" />
-                              Start
-                            </Button>
-                          ) : campaign.status === 'running' ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleStatusChange(campaign.id, 'paused')}
-                              className="border-yellow-700 text-yellow-400 hover:bg-yellow-900/20"
-                            >
-                              <Pause className="w-4 h-4 mr-1" />
-                              Pause
-                            </Button>
-                          ) : null}
-                          
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="outline" size="sm" className="border-slate-700 hover:bg-slate-800">
-                                <MoreVertical className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent className="bg-slate-900 border-slate-700">
-                              <DropdownMenuItem 
-                                onClick={() => navigate(createPageUrl("Generator") + `?edit=${campaign.id}`)}
-                              >
-                                <Edit3 className="w-4 h-4 mr-2" />
-                                Edit Campaign
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleDownloadLogs(campaign.log_file_path)}
-                                disabled={!campaign.log_file_path}
-                              >
-                                <Download className="w-4 h-4 mr-2" />
-                                Download Logs
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleDownloadTraffic(campaign.id)}
-                              >
-                                <Download className="w-4 h-4 mr-2" />
-                                Download Traffic
-                              </DropdownMenuItem>
-                              {(campaign.status === 'running' || campaign.status === 'paused') && (
-                                <DropdownMenuItem 
-                                  onClick={() => handleStatusChange(campaign.id, 'stopped')}
-                                >
-                                  <Square className="w-4 h-4 mr-2" />
-                                  Stop Campaign
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem 
-                                onClick={() => confirmDelete(campaign)}
-                                className="text-red-400 hover:text-red-300"
-                              >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                Delete Campaign
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    
-                    <CardContent className="p-6">
-                      {/* Progress Bar and Last Activity */}
-                      {campaign.status !== 'draft' && (
-                        <div className="mb-6">
-                           <div className="flex justify-between items-center mb-2">
-                                <p className="text-sm text-slate-300 font-medium">
-                                 Progress 
-                                 <span className="text-slate-400 ml-2">({totalRequests.toLocaleString()} requests)</span>
-                                </p>
-                                <p className="text-xs text-slate-400">
-                                 {campaign.duration_minutes === null ? 'Continuous' : `${(campaign.progress_percentage || 0).toFixed(0)}%`}
-                                </p>
-                           </div>
-                           {campaign.duration_minutes !== null && <Progress value={campaign.progress_percentage || 0} className="w-full h-2" />}
-                           <p className="text-xs text-slate-500 text-right mt-2">
-                            Last activity: {campaign.last_activity_time ? formatDistanceToNow(new Date(campaign.last_activity_time), { addSuffix: true }) : 'N/A'}
-                           </p>
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-sm">
-                        <div className="space-y-1">
-                          <p className="text-slate-400">Total Requests</p>
-                          <p className="text-lg font-bold text-white">{totalRequests.toLocaleString()}</p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-slate-400">Successful</p>
-                          <p className="text-lg font-bold text-green-400 flex items-center gap-1.5">
-                            <CheckCircle className="w-4 h-4" /> {successfulRequests.toLocaleString()}
-                          </p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-slate-400">Failed</p>
-                          <p className="text-lg font-bold text-red-400 flex items-center gap-1.5">
-                            <XCircle className="w-4 h-4" /> {failedRequests.toLocaleString()}
-                          </p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-slate-400">Success Rate</p>
-                          <p className="text-lg font-bold text-white">{successRate.toFixed(1)}%</p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-slate-400">Requests/Min</p>
-                          <p className="text-lg font-bold text-white">{campaign.requests_per_minute}</p>
-                        </div>
-                        <div className="space-y-1">
-                           <p className="text-slate-400">Duration</p>
-                           <p className="text-lg font-bold text-white">
-                            {campaign.duration_minutes === null ? (
-                              <span className="flex items-center gap-1">
-                                <Infinity className="w-4 h-4" /> Continuous
-                              </span>
-                            ) : (
-                              `${campaign.duration_minutes}m`
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      
-                      <div className="mt-6 pt-4 border-t border-slate-700">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                          <div className="flex items-center gap-3">
-                            <Users className="w-5 h-5 text-purple-400" />
-                            <div>
-                               <p className="text-slate-400">Profiles</p>
-                               <p className="font-semibold text-white truncate" title={getProfileNames(campaign.user_profile_ids)}>{getProfileNames(campaign.user_profile_ids)}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                             <Globe className="w-5 h-5 text-orange-400" />
-                             <div>
-                                <p className="text-slate-400">Locations</p>
-                                <p className="font-semibold text-white">{campaign.geo_locations?.join(', ') || 'N/A'}</p>
-                             </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <Wand2 className="w-5 h-5 text-blue-400" />
-                            <div>
-                               <p className="text-slate-400">Edge Cases</p>
-                               <p className="font-semibold text-white">
-                                {campaign.edge_cases?.filter(ec => ec.is_enabled).length || 0} enabled
-                               </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <CampaignCard
+                    campaign={campaign}
+                    onDelete={confirmDelete}
+                    onStatusChange={handleStatusChange}
+                  />
                 </motion.div>
                 )
               })}

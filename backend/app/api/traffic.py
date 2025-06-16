@@ -30,6 +30,9 @@ def append_traffic_to_file(campaign_id: str, traffic_data: Dict[str, Any]):
         logger.info(f"[File Operation] Starting to append traffic data for campaign {campaign_id}")
         campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
         
+        # Ensure campaign directory exists
+        os.makedirs(os.path.dirname(campaign_file), exist_ok=True)
+        
         if not os.path.exists(campaign_file):
             logger.info(f"[File Operation] Creating new campaign file: {campaign_file}")
             with open(campaign_file, 'w') as f:
@@ -78,6 +81,9 @@ class TrafficConfig:
     successful_requests: int = 0
     last_activity_time: Optional[datetime] = None
     progress_percentage: float = 0.0
+    user_profile_ids: List[str] = None
+    profile_user_counts: Dict[str, int] = None
+    total_profile_users: int = 0
 
     def __post_init__(self):
         if self.user_profiles is None:
@@ -314,8 +320,15 @@ def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
             "duration_minutes": config.duration_minutes,
             "geo_locations": config.geo_locations,
             "rtb_config": config.rtb_config,
-            "config": config.config
+            "config": config.config,
+            "user_profile_ids": config.user_profile_ids,
+            "profile_user_counts": config.profile_user_counts,
+            "total_profile_users": config.total_profile_users
         }
+        
+        # Add RTB data if configured
+        if config.rtb_config:
+            traffic_data["rtb_data"] = generate_rtb_data(config.rtb_config)
         
         logger.debug(f"Generated traffic data: {json.dumps(traffic_data, indent=2)}")
         return traffic_data
