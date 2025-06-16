@@ -125,52 +125,62 @@ const CampaignCard = ({ campaign, onDelete, onStatusChange, allProfiles }) => {
     }
   };
 
-  const startTrafficGeneration = async () => {
-    setIsInjecting(true);
-    setError(null);
-
+  const startTrafficGeneration = async (campaign) => {
     try {
-      // Check backend health
-      const healthCheck = await backendClient.traffic.checkHealth();
-      if (!healthCheck.success || healthCheck.status !== 'healthy') {
-        throw new Error(healthCheck.error || "Backend health check failed");
-      }
-
-      // Update campaign status
-      await backendClient.sessions.update(campaign.id, {
-        status: 'running',
-        start_time: new Date().toISOString(),
-      });
-
-      // Start traffic generation
-      const response = await backendClient.traffic.generate({
+      const config = {
         campaign_id: campaign.id,
         target_url: campaign.target_url,
-        requests_per_minute: campaign.requests_per_minute || 60,
-        duration_minutes: campaign.duration_minutes || 60,
-        user_profile_ids: campaign.user_profile_ids || [],
-        profile_user_counts: campaign.profile_user_counts || {},
+        requests_per_minute: campaign.requests_per_minute,
+        duration_minutes: campaign.duration_minutes,
+        user_profile_ids: campaign.user_profile_ids,
+        profile_user_counts: campaign.profile_user_counts,
         geo_locations: campaign.geo_locations || ["United States"],
         rtb_config: campaign.rtb_config || {},
-        config: {
-          ...campaign.config,
-          randomize_timing: true,
-          success_rate: 0.85
-        }
-      });
+        config: campaign.config || {},
+        log_file_path: campaign.log_file_path,
+        log_level: campaign.log_level,
+        log_format: campaign.log_format
+      };
+
+      console.log('Starting traffic generation with config:', JSON.stringify(config, null, 2));
+
+      const response = await backendClient.traffic.generate(config);
 
       if (!response.success) {
-        throw new Error(response.message || "Failed to start traffic generation");
+        let errorMessage = 'Failed to start traffic generation';
+        if (response.error) {
+          errorMessage = response.error;
+        }
+        if (response.status === 'running') {
+          errorMessage = 'Traffic generation is already running for this campaign';
+        }
+        console.error('Traffic generation error:', {
+          response: response,
+          config: config
+        });
+        throw new Error(errorMessage);
       }
 
-      // Start monitoring
+      console.log('Traffic generation started successfully:', response);
+      setCampaigns(prevCampaigns =>
+        prevCampaigns.map(c =>
+          c.id === campaign.id
+            ? { ...c, status: 'running', last_started: new Date().toISOString() }
+            : c
+        )
+      );
+
       await startMonitoring();
-      onStatusChange(campaign.id, 'running');
     } catch (error) {
-      console.error(`[Injector] Error:`, error);
-      setError(`Failed to start traffic generation: ${error.message}`);
-      setIsInjecting(false);
-      stopMonitoring();
+      console.error('Error starting traffic generation:', error);
+      setError(error.message || 'Failed to start traffic generation');
+      setCampaigns(prevCampaigns =>
+        prevCampaigns.map(c =>
+          c.id === campaign.id
+            ? { ...c, status: 'error', error_message: error.message }
+            : c
+        )
+      );
     }
   };
 
@@ -245,7 +255,7 @@ const CampaignCard = ({ campaign, onDelete, onStatusChange, allProfiles }) => {
           <div className="flex justify-end gap-2">
             {!isInjecting ? (
               <Button
-                onClick={startTrafficGeneration}
+                onClick={() => startTrafficGeneration(campaign)}
                 className="bg-green-600 hover:bg-green-700 text-white"
                 disabled={campaign.status === 'running'}
               >

@@ -237,73 +237,104 @@ def generate_traffic():
     try:
         data = request.get_json()
         if not data:
+            logger.error("[API] No data provided in request")
             return jsonify({"error": "No data provided"}), 400
+
+        # Log the received data
+        logger.info(f"[API] Received traffic generation request: {json.dumps(data, indent=2)}")
 
         # Validate required fields
         required_fields = ['campaign_id', 'target_url', 'requests_per_minute']
-        for field in required_fields:
-            if field not in data:
-                return jsonify({"error": f"Missing required field: {field}"}), 400
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            error_msg = f"Missing required fields: {', '.join(missing_fields)}"
+            logger.error(f"[API] {error_msg}")
+            return jsonify({"error": error_msg}), 400
 
         # Validate user profiles
         if not data.get('user_profile_ids'):
-            return jsonify({"error": "At least one user profile is required"}), 400
+            error_msg = "At least one user profile is required"
+            logger.error(f"[API] {error_msg}")
+            return jsonify({"error": error_msg}), 400
 
         # Validate profile user counts
         profile_user_counts = data.get('profile_user_counts', {})
         if not profile_user_counts:
-            return jsonify({"error": "User counts must be specified for each profile"}), 400
+            error_msg = "User counts must be specified for each profile"
+            logger.error(f"[API] {error_msg}")
+            return jsonify({"error": error_msg}), 400
 
         total_users = sum(profile_user_counts.values())
         if total_users == 0:
-            return jsonify({"error": "Total number of users must be greater than 0"}), 400
+            error_msg = "Total number of users must be greater than 0"
+            logger.error(f"[API] {error_msg}")
+            return jsonify({"error": error_msg}), 400
 
         # Check if traffic generation is already running
         campaign_id = data['campaign_id']
         if campaign_id in active_threads:
+            error_msg = "Traffic generation is already running for this campaign"
+            logger.warning(f"[API] {error_msg}")
             return jsonify({
-                "error": "Traffic generation is already running for this campaign",
+                "error": error_msg,
                 "status": "running"
             }), 409
 
-        # Create traffic config
-        config = TrafficConfig(
-            campaign_id=campaign_id,
-            target_url=data['target_url'],
-            requests_per_minute=data['requests_per_minute'],
-            duration_minutes=data.get('duration_minutes'),
-            user_profile_ids=data['user_profile_ids'],
-            profile_user_counts=profile_user_counts,
-            total_profile_users=total_users,
-            log_file_path=data.get('log_file_path'),
-            log_level=data.get('log_level'),
-            log_format=data.get('log_format')
-        )
+        try:
+            # Create traffic config
+            config = TrafficConfig(
+                campaign_id=campaign_id,
+                target_url=data['target_url'],
+                requests_per_minute=data['requests_per_minute'],
+                duration_minutes=data.get('duration_minutes'),
+                user_profile_ids=data['user_profile_ids'],
+                profile_user_counts=profile_user_counts,
+                total_profile_users=total_users,
+                geo_locations=data.get('geo_locations', ["United States"]),
+                rtb_config=data.get('rtb_config', {}),
+                config=data.get('config', {}),
+                log_file_path=data.get('log_file_path'),
+                log_level=data.get('log_level'),
+                log_format=data.get('log_format')
+            )
+            logger.info(f"[API] Created traffic config: {json.dumps(config.to_dict(), indent=2)}")
+        except Exception as e:
+            error_msg = f"Error creating traffic config: {str(e)}"
+            logger.error(f"[API] {error_msg}")
+            return jsonify({"error": error_msg}), 400
 
-        # Start traffic generation in background
-        thread = threading.Thread(
-            target=generate_traffic_background,
-            args=(config,),
-            daemon=True
-        )
-        thread.start()
+        try:
+            # Start traffic generation in background
+            thread = threading.Thread(
+                target=generate_traffic_background,
+                args=(config,),
+                daemon=True
+            )
+            thread.start()
 
-        # Store thread reference
-        active_threads[campaign_id] = thread.ident
-        thread_locks[campaign_id] = threading.Lock()
+            # Store thread reference
+            active_threads[campaign_id] = thread.ident
+            thread_locks[campaign_id] = threading.Lock()
 
-        # Update campaign status
-        update_campaign_status(campaign_id, "running")
+            # Update campaign status
+            update_campaign_status(campaign_id, "running")
 
-        return jsonify({
-            "message": "Traffic generation started",
-            "campaign_id": campaign_id,
-            "status": "running"
-        })
+            logger.info(f"[API] Successfully started traffic generation for campaign {campaign_id}")
+            return jsonify({
+                "success": True,
+                "message": "Traffic generation started",
+                "campaign_id": campaign_id,
+                "status": "running"
+            })
+        except Exception as e:
+            error_msg = f"Error starting traffic generation thread: {str(e)}"
+            logger.error(f"[API] {error_msg}")
+            return jsonify({"error": error_msg}), 500
 
     except Exception as e:
-        logger.error(f"Error starting traffic generation: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+        error_msg = f"Unexpected error in traffic generation: {str(e)}"
+        logger.error(f"[API] {error_msg}", exc_info=True)
+        return jsonify({"error": error_msg}), 500
 
 def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
     """Generate a single traffic data entry"""
