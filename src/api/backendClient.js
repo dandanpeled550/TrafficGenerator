@@ -57,6 +57,19 @@ const backendClient = {
         throw error;
       }
     },
+    monitor: async (campaignId) => {
+      try {
+        console.log('Getting monitoring data for campaign:', campaignId);
+        const response = await fetch(`${API_BASE_URL}/api/traffic/monitor/${campaignId}`, {
+          headers: defaultHeaders,
+          credentials: "include",
+        });
+        return await handleResponse(response);
+      } catch (error) {
+        console.error('Error getting monitoring data:', error);
+        throw error;
+      }
+    },
     getStatus: async (campaignId) => {
       try {
         console.log('Getting status for campaign:', campaignId);
