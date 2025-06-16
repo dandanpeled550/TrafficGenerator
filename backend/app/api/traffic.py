@@ -6,7 +6,7 @@ import threading
 import random
 import time
 from datetime import datetime, timedelta
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 from threading import Lock
 import uuid
@@ -64,9 +64,9 @@ class TrafficConfig:
     target_url: str
     requests_per_minute: int = 10
     duration_minutes: Optional[int] = 60
-    geo_locations: List[str] = None
-    rtb_config: Optional[Dict[str, Any]] = None
-    config: Optional[Dict[str, Any]] = None
+    geo_locations: List[str] = field(default_factory=lambda: ["United States"])
+    rtb_config: Dict[str, Any] = field(default_factory=dict)
+    config: Dict[str, Any] = field(default_factory=dict)
     user_profiles: List[Dict[str, Any]] = None
     log_file_path: Optional[str] = None
     status: str = "draft"
@@ -80,18 +80,26 @@ class TrafficConfig:
     progress_percentage: float = 0.0
 
     def __post_init__(self):
-        if self.geo_locations is None:
-            self.geo_locations = ["United States"]
         if self.user_profiles is None:
             self.user_profiles = []
-        if self.rtb_config is None:
-            self.rtb_config = {}
-        if self.config is None:
-            self.config = {}
         if self.created_at is None:
             self.created_at = datetime.utcnow()
         if self.updated_at is None:
             self.updated_at = datetime.utcnow()
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert TrafficConfig to a dictionary with serializable values"""
+        return {
+            "campaign_id": self.campaign_id,
+            "target_url": self.target_url,
+            "requests_per_minute": self.requests_per_minute,
+            "duration_minutes": self.duration_minutes,
+            "geo_locations": self.geo_locations,
+            "rtb_config": self.rtb_config,
+            "config": self.config,
+            "start_time": self.start_time.isoformat() if self.start_time else None,
+            "end_time": self.end_time.isoformat() if self.end_time else None
+        }
 
 def generate_traffic_background(config: TrafficConfig):
     """Generate traffic in the background"""
@@ -101,7 +109,7 @@ def generate_traffic_background(config: TrafficConfig):
     try:
         logger.info(f"[Traffic Generation] Starting background traffic generation for campaign {config.campaign_id}")
         logger.info(f"[Traffic Generation] Thread ID: {thread_id}")
-        logger.info(f"[Traffic Generation] Configuration: {json.dumps(config.__dict__, indent=2)}")
+        logger.info(f"[Traffic Generation] Configuration: {json.dumps(config.to_dict(), indent=2)}")
 
         # Create campaign-specific directory and file
         campaign_dir = os.path.join(TRAFFIC_DATA_DIR, config.campaign_id)
@@ -124,7 +132,9 @@ def generate_traffic_background(config: TrafficConfig):
         # Generate traffic
         request_count = 0
         start_time = datetime.utcnow()
+        config.start_time = start_time
         end_time = start_time + timedelta(minutes=config.duration_minutes) if config.duration_minutes else None
+        config.end_time = end_time
         logger.info(f"[Traffic Generation] Start time: {start_time.isoformat()}")
         logger.info(f"[Traffic Generation] End time: {end_time.isoformat() if end_time else 'No end time set'}")
 
@@ -264,7 +274,7 @@ def generate_traffic():
                 rtb_config=data.get('rtb_config', {}),
                 config=data.get('config', {})
             )
-            logger.info(f"[API] Created TrafficConfig: {json.dumps(config.__dict__, indent=2)}")
+            logger.info(f"[API] Created TrafficConfig: {json.dumps(config.to_dict(), indent=2)}")
         except Exception as e:
             logger.error(f"[API] Error creating TrafficConfig: {str(e)}", exc_info=True)
             return jsonify({
