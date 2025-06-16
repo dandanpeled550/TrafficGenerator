@@ -1,6 +1,8 @@
 // Log the API URL being used
 console.log('Using API URL:', import.meta.env.VITE_API_URL);
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 const handleResponse = async (response) => {
   const data = await response.json();
   console.log('API Response:', {
@@ -29,7 +31,7 @@ const backendClient = {
     generate: async (config) => {
       try {
         console.log('Starting traffic generation with config:', config);
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/traffic/generate`, {
+        const response = await fetch(`${API_BASE_URL}/api/traffic/generate`, {
           method: 'POST',
           headers: defaultHeaders,
           credentials: "include",
@@ -44,7 +46,7 @@ const backendClient = {
     stop: async (campaignId) => {
       try {
         console.log('Stopping traffic generation for campaign:', campaignId);
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/traffic/stop/${campaignId}`, {
+        const response = await fetch(`${API_BASE_URL}/api/traffic/stop/${campaignId}`, {
           method: 'POST',
           headers: defaultHeaders,
           credentials: "include",
@@ -58,7 +60,7 @@ const backendClient = {
     getStatus: async (campaignId) => {
       try {
         console.log('Getting status for campaign:', campaignId);
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/traffic/status/${campaignId}`, {
+        const response = await fetch(`${API_BASE_URL}/api/traffic/status/${campaignId}`, {
           headers: defaultHeaders,
           credentials: "include",
         });
@@ -71,8 +73,8 @@ const backendClient = {
     getGenerated: async (campaignId = null) => {
       try {
         const url = campaignId 
-          ? `${import.meta.env.VITE_API_URL}/api/traffic/generated/${campaignId}`
-          : `${import.meta.env.VITE_API_URL}/api/traffic/generated`;
+          ? `${API_BASE_URL}/api/traffic/generated/${campaignId}`
+          : `${API_BASE_URL}/api/traffic/generated`;
         console.log('Fetching generated traffic:', url);
         const response = await fetch(url, {
           headers: defaultHeaders,
@@ -87,7 +89,7 @@ const backendClient = {
     getStats: async (campaignId) => {
       try {
         console.log('Getting stats for campaign:', campaignId);
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/traffic/stats/${campaignId}`, {
+        const response = await fetch(`${API_BASE_URL}/api/traffic/stats/${campaignId}`, {
           headers: defaultHeaders,
           credentials: "include",
         });
@@ -100,7 +102,7 @@ const backendClient = {
     checkHealth: async () => {
       try {
         console.log('Checking backend health');
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/traffic/health`, {
+        const response = await fetch(`${API_BASE_URL}/api/traffic/health`, {
           headers: defaultHeaders,
           credentials: "include",
         });
@@ -117,7 +119,7 @@ const backendClient = {
     list: async () => {
       console.log('Fetching all sessions');
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/`, {
+        const response = await fetch(`${API_BASE_URL}/api/sessions/`, {
           headers: defaultHeaders,
           credentials: "include",
         });
@@ -129,7 +131,7 @@ const backendClient = {
     },
     get: async (sessionId) => {
       console.log('Fetching session:', sessionId);
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/${sessionId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}`, {
         headers: defaultHeaders,
         credentials: "include",
       });
@@ -137,7 +139,7 @@ const backendClient = {
     },
     create: async (sessionData) => {
       console.log('Creating session:', sessionData);
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/`, {
+      const response = await fetch(`${API_BASE_URL}/api/sessions/`, {
         method: "POST",
         headers: defaultHeaders,
         body: JSON.stringify(sessionData),
@@ -147,7 +149,7 @@ const backendClient = {
     },
     update: async (sessionId, updateData) => {
       console.log('Updating session:', sessionId, updateData);
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/${sessionId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}`, {
         method: "PUT",
         headers: defaultHeaders,
         body: JSON.stringify(updateData),
@@ -157,7 +159,7 @@ const backendClient = {
     },
     delete: async (sessionId) => {
       console.log('Deleting session:', sessionId);
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/sessions/${sessionId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}`, {
         method: "DELETE",
         headers: defaultHeaders,
         credentials: "include",
@@ -171,7 +173,7 @@ const backendClient = {
     list: async () => {
       console.log('Fetching all profiles');
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL}/api/profiles/`, {
+        const response = await fetch(`${API_BASE_URL}/api/profiles/`, {
           headers: defaultHeaders,
           credentials: "include",
         });
@@ -183,7 +185,7 @@ const backendClient = {
     },
     get: async (profileId) => {
       console.log('Fetching profile:', profileId);
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/profiles/${profileId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/profiles/${profileId}`, {
         headers: defaultHeaders,
         credentials: "include",
       });
@@ -191,7 +193,7 @@ const backendClient = {
     },
     create: async (profileData) => {
       console.log('Creating profile:', profileData);
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/profiles/`, {
+      const response = await fetch(`${API_BASE_URL}/api/profiles/`, {
         method: "POST",
         headers: defaultHeaders,
         body: JSON.stringify(profileData),
@@ -201,7 +203,7 @@ const backendClient = {
     },
     update: async (profileId, updateData) => {
       console.log('Updating profile:', profileId, updateData);
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/profiles/${profileId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/profiles/${profileId}`, {
         method: "PUT",
         headers: defaultHeaders,
         body: JSON.stringify(updateData),
@@ -211,7 +213,7 @@ const backendClient = {
     },
     delete: async (profileId) => {
       console.log('Deleting profile:', profileId);
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/profiles/${profileId}`, {
+      const response = await fetch(`${API_BASE_URL}/api/profiles/${profileId}`, {
         method: "DELETE",
         headers: defaultHeaders,
         credentials: "include",
@@ -224,7 +226,7 @@ const backendClient = {
   checkConnection: async () => {
     console.log('Checking connection to backend...');
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/health`, {
+      const response = await fetch(`${API_BASE_URL}/api/health`, {
         headers: defaultHeaders,
         credentials: "include",
       });
