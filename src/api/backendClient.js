@@ -2,33 +2,20 @@
 console.log('Using API URL:', import.meta.env.VITE_API_URL);
 
 const handleResponse = async (response) => {
-  try {
-    const data = await response.json();
-    console.log('API Response:', {
-      status: response.status,
-      data: data
-    });
+  const data = await response.json();
+  console.log('API Response:', {
+    status: response.status,
+    data: data
+  });
 
-    if (!response.ok) {
-      const error = new Error(data.message || 'API request failed');
-      error.status = response.status;
-      error.data = data;
-      throw error;
-    }
-
-    if (!data || typeof data !== 'object') {
-      throw new Error('Invalid response format: expected object');
-    }
-
-    if (!('success' in data)) {
-      throw new Error('Invalid response format: missing success field');
-    }
-
-    return data;
-  } catch (error) {
-    console.error('Error handling response:', error);
+  if (!response.ok) {
+    const error = new Error(data.message || 'API request failed');
+    error.status = response.status;
+    error.data = data;
     throw error;
   }
+
+  return data;
 };
 
 const defaultHeaders = {
@@ -41,7 +28,7 @@ const backendClient = {
   traffic: {
     generate: async (config) => {
       try {
-        console.log('Starting traffic generation with config:', JSON.stringify(config, null, 2));
+        console.log('Starting traffic generation with config:', config);
         const response = await fetch('/api/traffic/generate', {
           method: 'POST',
           headers: {
