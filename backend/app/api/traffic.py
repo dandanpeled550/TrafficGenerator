@@ -19,22 +19,28 @@ os.makedirs(TRAFFIC_DATA_DIR, exist_ok=True)
 ALL_TRAFFIC_FILE = os.path.join(TRAFFIC_DATA_DIR, 'all_traffic.json')
 
 def append_traffic_to_file(campaign_id: str, traffic_data: Dict[str, Any]):
-    # Per-campaign file
-    campaign_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}.json')
-    for file in [campaign_file, ALL_TRAFFIC_FILE]:
-        if os.path.exists(file):
-            with open(file, 'r+') as f:
-                try:
-                    data = json.load(f)
-                except Exception:
-                    data = []
-                data.append(traffic_data)
-                f.seek(0)
-                json.dump(data, f)
-                f.truncate()
-        else:
-            with open(file, 'w') as f:
-                json.dump([traffic_data], f)
+    """Append traffic data to campaign-specific file"""
+    try:
+        campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
+        if not os.path.exists(campaign_file):
+            with open(campaign_file, 'w') as f:
+                json.dump([], f)
+
+        with open(campaign_file, 'r+') as f:
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError:
+                data = []
+            
+            data.append(traffic_data)
+            f.seek(0)
+            json.dump(data, f, indent=2)
+            f.truncate()
+            
+        logger.debug(f"Appended traffic data to {campaign_file}")
+    except Exception as e:
+        logger.error(f"Error appending traffic data: {str(e)}", exc_info=True)
+        raise
 
 @dataclass
 class TrafficConfig:
@@ -77,8 +83,8 @@ def generate_traffic_background(config: TrafficConfig):
         logger.info(f"Starting background traffic generation for campaign {config.campaign_id}")
         logger.debug(f"Configuration: {config}")
 
-        # Create campaign data file if it doesn't exist
-        campaign_file = os.path.join(TRAFFIC_DATA_DIR, f'{config.campaign_id}.json')
+        # Create campaign-specific data file
+        campaign_file = os.path.join(TRAFFIC_DATA_DIR, config.campaign_id, 'traffic.json')
         if not os.path.exists(campaign_file):
             logger.info(f"Creating new campaign file: {campaign_file}")
             with open(campaign_file, 'w') as f:
@@ -108,7 +114,7 @@ def generate_traffic_background(config: TrafficConfig):
                 response_data = simulate_request(traffic_data)
                 logger.debug(f"Simulated request response: {json.dumps(response_data, indent=2)}")
 
-                # Save to file
+                # Save to campaign-specific file
                 append_traffic_to_file(config.campaign_id, response_data)
                 request_count += 1
                 logger.debug(f"Saved request {request_count} for campaign {config.campaign_id}")
@@ -189,6 +195,12 @@ def generate_traffic():
                 "message": "Duration must be greater than 0"
             }), 400
 
+        # Create campaign-specific directory if it doesn't exist
+        campaign_dir = os.path.join(TRAFFIC_DATA_DIR, config.campaign_id)
+        if not os.path.exists(campaign_dir):
+            os.makedirs(campaign_dir)
+            logger.info(f"Created campaign directory: {campaign_dir}")
+
         # Start traffic generation in background thread
         logger.info(f"Starting traffic generation thread for campaign {config.campaign_id}")
         thread = threading.Thread(target=generate_traffic_background, args=(config,))
@@ -196,15 +208,22 @@ def generate_traffic():
         thread.start()
         
         logger.info(f"Successfully started traffic generation for campaign {config.campaign_id}")
-        return jsonify({
+        
+        # Return a proper response object
+        response_data = {
             "success": True,
             "message": "Traffic generation started",
             "data": {
                 "campaign_id": config.campaign_id,
                 "requests_per_minute": config.requests_per_minute,
-                "duration_minutes": config.duration_minutes
+                "duration_minutes": config.duration_minutes,
+                "status": "running",
+                "start_time": datetime.utcnow().isoformat()
             }
-        })
+        }
+        logger.debug(f"Sending response: {json.dumps(response_data, indent=2)}")
+        return jsonify(response_data)
+
     except Exception as e:
         logger.error(f"Error generating traffic: {str(e)}", exc_info=True)
         return jsonify({
@@ -213,28 +232,28 @@ def generate_traffic():
         }), 500
 
 def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
-    """Generate traffic data based on configuration"""
-    logger.debug(f"Generating traffic data for campaign {config.campaign_id}")
-    
-    # Ensure geo_locations is not empty
-    if not config.geo_locations:
-        logger.warning(f"No geo_locations provided for campaign {config.campaign_id}, using default")
-        config.geo_locations = ["United States"]
-    
-    traffic_data = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "campaign_id": config.campaign_id,
-        "target_url": config.target_url,
-        "geo_location": random.choice(config.geo_locations),
-        "user_agent": random.choice([
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15"
-        ]),
-        "rtb_data": generate_rtb_data(config.rtb_config) if config.rtb_config else None
-    }
-    logger.debug(f"Generated traffic data: {traffic_data}")
-    return traffic_data
+    """Generate a single traffic data entry"""
+    try:
+        logger.debug(f"Generating traffic data for campaign {config.campaign_id}")
+        
+        # Generate base traffic data
+        traffic_data = {
+            "id": str(int(time.time() * 1000)),
+            "timestamp": datetime.utcnow().isoformat(),
+            "campaign_id": config.campaign_id,
+            "target_url": config.target_url,
+            "requests_per_minute": config.requests_per_minute,
+            "duration_minutes": config.duration_minutes,
+            "geo_locations": config.geo_locations,
+            "rtb_config": config.rtb_config,
+            "config": config.config
+        }
+        
+        logger.debug(f"Generated traffic data: {json.dumps(traffic_data, indent=2)}")
+        return traffic_data
+    except Exception as e:
+        logger.error(f"Error generating traffic data: {str(e)}", exc_info=True)
+        raise
 
 def generate_rtb_data(rtb_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """Generate RTB data if RTB configuration is provided"""
@@ -586,10 +605,35 @@ def get_campaign_status(campaign_id: str):
 def health_check():
     """Health check endpoint"""
     try:
+        logger.info("Health check requested")
+        # Check if traffic data directory exists and is writable
+        if not os.path.exists(TRAFFIC_DATA_DIR):
+            os.makedirs(TRAFFIC_DATA_DIR)
+            logger.info(f"Created traffic data directory: {TRAFFIC_DATA_DIR}")
+        
+        # Test write access
+        test_file = os.path.join(TRAFFIC_DATA_DIR, '.health_check')
+        try:
+            with open(test_file, 'w') as f:
+                f.write('test')
+            os.remove(test_file)
+            logger.debug("Successfully tested write access to traffic data directory")
+        except Exception as e:
+            logger.error(f"Failed to write to traffic data directory: {str(e)}")
+            return jsonify({
+                "success": False,
+                "status": "unhealthy",
+                "error": f"Storage error: {str(e)}"
+            }), 500
+
         return jsonify({
             "success": True,
             "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
+            "data": {
+                "storage": "ok",
+                "traffic_data_dir": TRAFFIC_DATA_DIR
+            }
         })
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}", exc_info=True)
