@@ -47,7 +47,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
-const CampaignCard = ({ campaign, onDelete, onStatusChange }) => {
+const CampaignCard = ({ campaign, onDelete, onStatusChange, allProfiles }) => {
   const [isInjecting, setIsInjecting] = useState(false);
   const [error, setError] = useState(null);
   const [monitoringData, setMonitoringData] = useState({
@@ -75,6 +75,16 @@ const CampaignCard = ({ campaign, onDelete, onStatusChange }) => {
       default:
         return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
     }
+  };
+
+  const getProfileNames = (profileIds) => {
+    if (!profileIds || !profileIds.length) return "No profiles selected";
+    return profileIds
+      .map(id => {
+        const profile = allProfiles.find(p => p.id === id);
+        return profile ? profile.name : `Unknown Profile (${id})`;
+      })
+      .join(", ");
   };
 
   useEffect(() => {
@@ -379,16 +389,6 @@ export default function CampaignsPage() {
     setShowDeleteConfirm(true);
   };
 
-  const getProfileNames = (profileIds) => {
-    if (!profileIds || !profileIds.length) return "No profiles selected";
-    return profileIds
-      .map(id => {
-        const profile = allProfiles.find(p => p.id === id);
-        return profile ? profile.name : `Unknown Profile (${id})`;
-      })
-      .join(", ");
-  };
-
   const filteredCampaigns = campaigns.filter(campaign => {
     const matchesSearch = campaign.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          campaign.target_url.toLowerCase().includes(searchTerm.toLowerCase());
@@ -534,6 +534,7 @@ export default function CampaignsPage() {
                     campaign={campaign}
                     onDelete={confirmDelete}
                     onStatusChange={handleStatusChange}
+                    allProfiles={allProfiles}
                   />
                 </motion.div>
                 )
