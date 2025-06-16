@@ -11,10 +11,7 @@ const handleResponse = async (response) => {
   });
 
   if (!response.ok) {
-    const error = new Error(data.message || 'API request failed');
-    error.status = response.status;
-    error.data = data;
-    throw error;
+    throw new Error(data.error || 'Request failed');
   }
 
   return data;
@@ -37,10 +34,27 @@ const backendClient = {
           credentials: "include",
           body: JSON.stringify(config),
         });
-        return await handleResponse(response);
+        const data = await response.json();
+        
+        // Handle both success and error cases
+        if (!response.ok) {
+          return {
+            success: false,
+            error: data.error || 'Failed to start traffic generation',
+            status: data.status
+          };
+        }
+        
+        return {
+          success: true,
+          ...data
+        };
       } catch (error) {
         console.error('Error generating traffic:', error);
-        throw error;
+        return {
+          success: false,
+          error: error.message || 'Failed to start traffic generation'
+        };
       }
     },
     stop: async (campaignId) => {

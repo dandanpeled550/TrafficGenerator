@@ -114,15 +114,35 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
 
     // Start traffic generation
     try {
-      const response = await backendClient.traffic.generate({
+      // Validate required fields
+      if (!campaign.user_profile_ids || campaign.user_profile_ids.length === 0) {
+        throw new Error('At least one user profile is required');
+      }
+
+      if (!campaign.profile_user_counts || Object.keys(campaign.profile_user_counts).length === 0) {
+        throw new Error('User counts must be specified for each profile');
+      }
+
+      const config = {
         campaign_id: campaign.id,
         target_url: campaign.target_url,
         requests_per_minute: campaign.requests_per_minute || 60,
-        duration_minutes: campaign.duration_minutes || 60
-      });
+        duration_minutes: campaign.duration_minutes || 60,
+        user_profile_ids: campaign.user_profile_ids,
+        profile_user_counts: campaign.profile_user_counts,
+        geo_locations: campaign.geo_locations || ["United States"],
+        rtb_config: campaign.rtb_config || {},
+        config: campaign.config || {},
+        log_file_path: campaign.log_file_path,
+        log_level: campaign.log_level,
+        log_format: campaign.log_format
+      };
+
+      console.log(`[Injector] Starting traffic generation with config:`, JSON.stringify(config, null, 2));
+      const response = await backendClient.traffic.generate(config);
 
       if (!response.success) {
-        throw new Error(response.message || "Failed to start traffic generation");
+        throw new Error(response.error || "Failed to start traffic generation");
       }
 
       console.log(`[Injector] Successfully started traffic generation for campaign ${campaign.id}`);
