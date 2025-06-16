@@ -603,42 +603,44 @@ def get_campaign_status(campaign_id: str):
 
 @bp.route("/health", methods=['GET'])
 def health_check():
-    """Health check endpoint"""
+    """Check the health of the traffic generation service"""
     try:
         logger.info("Health check requested")
+        
         # Check if traffic data directory exists and is writable
         if not os.path.exists(TRAFFIC_DATA_DIR):
-            os.makedirs(TRAFFIC_DATA_DIR)
-            logger.info(f"Created traffic data directory: {TRAFFIC_DATA_DIR}")
+            logger.info(f"Creating traffic data directory: {TRAFFIC_DATA_DIR}")
+            os.makedirs(TRAFFIC_DATA_DIR, exist_ok=True)
         
-        # Test write access
+        # Test write permissions
         test_file = os.path.join(TRAFFIC_DATA_DIR, '.health_check')
         try:
             with open(test_file, 'w') as f:
                 f.write('test')
             os.remove(test_file)
-            logger.debug("Successfully tested write access to traffic data directory")
         except Exception as e:
-            logger.error(f"Failed to write to traffic data directory: {str(e)}")
+            logger.error(f"Directory not writable: {str(e)}")
             return jsonify({
                 "success": False,
                 "status": "unhealthy",
-                "error": f"Storage error: {str(e)}"
+                "error": f"Traffic data directory not writable: {str(e)}"
             }), 500
 
+        logger.info("Health check passed")
         return jsonify({
             "success": True,
             "status": "healthy",
-            "timestamp": datetime.utcnow().isoformat(),
+            "message": "Traffic generation service is healthy",
             "data": {
-                "storage": "ok",
-                "traffic_data_dir": TRAFFIC_DATA_DIR
+                "traffic_data_dir": TRAFFIC_DATA_DIR,
+                "timestamp": datetime.utcnow().isoformat()
             }
-        })
+        }), 200
+
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}", exc_info=True)
         return jsonify({
             "success": False,
             "status": "unhealthy",
-            "error": str(e)
+            "error": f"Health check failed: {str(e)}"
         }), 500 
