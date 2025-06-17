@@ -12,6 +12,7 @@ from threading import Lock
 import uuid
 from app.api.sessions import sessions  # Import sessions storage
 
+#nonsense
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ ALL_TRAFFIC_FILE = os.path.join(TRAFFIC_DATA_DIR, 'all_traffic.json')
 # Add after other global variables
 active_threads = {}
 thread_locks = {}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB max file size
 
 def append_traffic_to_file(campaign_id: str, traffic_data: Dict[str, Any]):
     """Append traffic data to campaign-specific file"""
@@ -34,30 +36,48 @@ def append_traffic_to_file(campaign_id: str, traffic_data: Dict[str, Any]):
         # Ensure campaign directory exists
         os.makedirs(os.path.dirname(campaign_file), exist_ok=True)
         
-        if not os.path.exists(campaign_file):
-            logger.info(f"[File Operation] Creating new campaign file: {campaign_file}")
-            with open(campaign_file, 'w') as f:
-                json.dump([], f)
-            logger.info(f"[File Operation] Created new campaign file successfully")
+        # Get thread lock for this campaign
+        lock = thread_locks.get(campaign_id)
+        if not lock:
+            lock = threading.Lock()
+            thread_locks[campaign_id] = lock
+        
+        with lock:
+            # Check if file exists and create if it doesn't
+            if not os.path.exists(campaign_file):
+                logger.info(f"[File Operation] Creating new campaign file: {campaign_file}")
+                with open(campaign_file, 'w') as f:
+                    json.dump([], f)
+                logger.info(f"[File Operation] Created new campaign file successfully")
 
-        logger.debug(f"[File Operation] Opening file for read/write: {campaign_file}")
-        with open(campaign_file, 'r+') as f:
-            try:
-                data = json.load(f)
-                logger.debug(f"[File Operation] Successfully loaded existing data, current size: {len(data)} entries")
-            except json.JSONDecodeError:
-                logger.warning(f"[File Operation] JSON decode error, initializing empty data array")
-                data = []
+            # Check file size
+            if os.path.exists(campaign_file) and os.path.getsize(campaign_file) > MAX_FILE_SIZE:
+                logger.warning(f"[File Operation] File size exceeds limit for campaign {campaign_id}")
+                # Create backup of current file
+                backup_file = f"{campaign_file}.{int(time.time())}.bak"
+                os.rename(campaign_file, backup_file)
+                # Create new file
+                with open(campaign_file, 'w') as f:
+                    json.dump([], f)
+
+            logger.debug(f"[File Operation] Opening file for read/write: {campaign_file}")
+            with open(campaign_file, 'r+') as f:
+                try:
+                    data = json.load(f)
+                    logger.debug(f"[File Operation] Successfully loaded existing data, current size: {len(data)} entries")
+                except json.JSONDecodeError:
+                    logger.warning(f"[File Operation] JSON decode error, initializing empty data array")
+                    data = []
+                
+                data.append(traffic_data)
+                logger.debug(f"[File Operation] Added new traffic data, new size: {len(data)} entries")
+                
+                f.seek(0)
+                json.dump(data, f, indent=2)
+                f.truncate()
+                logger.info(f"[File Operation] Successfully wrote updated data to file")
             
-            data.append(traffic_data)
-            logger.debug(f"[File Operation] Added new traffic data, new size: {len(data)} entries")
-            
-            f.seek(0)
-            json.dump(data, f, indent=2)
-            f.truncate()
-            logger.info(f"[File Operation] Successfully wrote updated data to file")
-            
-        logger.info(f"[File Operation] Successfully appended traffic data to {campaign_file}")
+            logger.info(f"[File Operation] Successfully appended traffic data to {campaign_file}")
     except Exception as e:
         logger.error(f"[File Operation] Error appending traffic data: {str(e)}", exc_info=True)
         raise
@@ -330,6 +350,9 @@ def generate_traffic():
             return jsonify({"error": error_msg}), 400
 
         try:
+            # Create thread lock for this campaign
+            thread_locks[campaign_id] = threading.Lock()
+            
             # Start traffic generation in background
             thread = threading.Thread(
                 target=generate_traffic_background,
@@ -338,9 +361,9 @@ def generate_traffic():
             )
             thread.start()
 
-            # Store thread reference
-            active_threads[campaign_id] = thread.ident
-            thread_locks[campaign_id] = threading.Lock()
+            # Store thread reference and ID
+            thread_id = str(uuid.uuid4())
+            active_threads[campaign_id] = thread_id
 
             # Update campaign status
             update_campaign_status(campaign_id, "running")
@@ -355,6 +378,11 @@ def generate_traffic():
         except Exception as e:
             error_msg = f"Error starting traffic generation thread: {str(e)}"
             logger.error(f"[API] {error_msg}")
+            # Clean up resources if thread creation fails
+            if campaign_id in active_threads:
+                del active_threads[campaign_id]
+            if campaign_id in thread_locks:
+                del thread_locks[campaign_id]
             return jsonify({"error": error_msg}), 500
 
     except Exception as e:
@@ -403,29 +431,56 @@ def generate_rtb_data(rtb_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     default_ad_formats = ["banner", "interstitial", "native"]
     default_app_categories = ["IAB9", "IAB1", "IAB2"]
     
-    # Get values from config with defaults
-    device_models = rtb_config.get("device_models", default_device_models)
-    ad_formats = rtb_config.get("ad_formats", default_ad_formats)
-    app_categories = rtb_config.get("app_categories", default_app_categories)
-    
-    # Ensure lists are not empty
-    if not device_models:
-        logger.warning("Empty device_models list, using defaults")
-        device_models = default_device_models
-    if not ad_formats:
-        logger.warning("Empty ad_formats list, using defaults")
-        ad_formats = default_ad_formats
-    if not app_categories:
-        logger.warning("Empty app_categories list, using defaults")
-        app_categories = default_app_categories
+    try:
+        # Validate RTB configuration
+        if not isinstance(rtb_config, dict):
+            logger.warning("Invalid RTB config type, using defaults")
+            rtb_config = {}
         
-    return {
-        "device_brand": rtb_config.get("device_brand", "samsung"),
-        "device_model": random.choice(device_models),
-        "ad_format": random.choice(ad_formats),
-        "app_category": random.choice(app_categories),
-        "adid": generate_adid() if rtb_config.get("generate_adid", True) else None
-    }
+        # Get values from config with defaults
+        device_models = rtb_config.get("device_models", default_device_models)
+        ad_formats = rtb_config.get("ad_formats", default_ad_formats)
+        app_categories = rtb_config.get("app_categories", default_app_categories)
+        
+        # Ensure lists are not empty and contain valid values
+        if not isinstance(device_models, list) or not device_models:
+            logger.warning("Invalid device_models list, using defaults")
+            device_models = default_device_models
+        if not isinstance(ad_formats, list) or not ad_formats:
+            logger.warning("Invalid ad_formats list, using defaults")
+            ad_formats = default_ad_formats
+        if not isinstance(app_categories, list) or not app_categories:
+            logger.warning("Invalid app_categories list, using defaults")
+            app_categories = default_app_categories
+            
+        # Validate device brand
+        device_brand = rtb_config.get("device_brand", "samsung")
+        if not isinstance(device_brand, str):
+            logger.warning("Invalid device_brand, using default")
+            device_brand = "samsung"
+            
+        # Generate RTB data
+        rtb_data = {
+            "device_brand": device_brand,
+            "device_model": random.choice(device_models),
+            "ad_format": random.choice(ad_formats),
+            "app_category": random.choice(app_categories),
+            "adid": generate_adid() if rtb_config.get("generate_adid", True) else None
+        }
+        
+        logger.debug(f"Generated RTB data: {json.dumps(rtb_data, indent=2)}")
+        return rtb_data
+        
+    except Exception as e:
+        logger.error(f"Error generating RTB data: {str(e)}", exc_info=True)
+        # Return default RTB data in case of error
+        return {
+            "device_brand": "samsung",
+            "device_model": random.choice(default_device_models),
+            "ad_format": random.choice(default_ad_formats),
+            "app_category": random.choice(default_app_categories),
+            "adid": generate_adid()
+        }
 
 def generate_adid() -> str:
     """Generate a random advertising ID"""
@@ -436,6 +491,10 @@ def simulate_request(traffic_data: Dict[str, Any]) -> Dict[str, Any]:
     try:
         logger.debug(f"Simulating request for traffic data: {traffic_data}")
         
+        # Validate traffic data
+        if not isinstance(traffic_data, dict):
+            raise ValueError("Invalid traffic data format")
+            
         # Simulate network latency (50-500ms)
         latency = random.uniform(0.05, 0.5)
         logger.debug(f"Simulated network latency: {latency:.3f}s")
@@ -456,7 +515,8 @@ def simulate_request(traffic_data: Dict[str, Any]) -> Dict[str, Any]:
             "response_size": random.randint(500, 2000),  # bytes
             "bid_id": f"bid-{random.randint(1000000, 9999999)}" if traffic_data.get('rtb_data') else None,
             "win_price": round(random.uniform(0.1, 5.0), 2) if success and traffic_data.get('rtb_data') else None,
-            "currency": "USD" if success and traffic_data.get('rtb_data') else None
+            "currency": "USD" if success and traffic_data.get('rtb_data') else None,
+            "timestamp": datetime.utcnow().isoformat()
         }
         logger.debug(f"Generated response data: {response_data}")
         
@@ -467,11 +527,17 @@ def simulate_request(traffic_data: Dict[str, Any]) -> Dict[str, Any]:
         return traffic_data
     except Exception as e:
         logger.error(f"Error simulating request: {str(e)}", exc_info=True)
-        traffic_data.update({
+        # Return error response
+        error_response = {
             "success": False,
             "error": str(e),
-            "status_code": 500
-        })
+            "status_code": 500,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        if isinstance(traffic_data, dict):
+            traffic_data.update(error_response)
+        else:
+            traffic_data = error_response
         return traffic_data
 
 @bp.route("/generated/<campaign_id>", methods=['GET'])
@@ -813,14 +879,46 @@ def stop_traffic(campaign_id: str):
 def update_campaign_status(campaign_id: str, status: str, additional_data: Dict[str, Any] = None):
     """Update campaign status and related data"""
     try:
-        campaign_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}.json')
-        if os.path.exists(campaign_file):
-            with open(campaign_file, 'r') as f:
-                traffic_data = json.load(f)
+        logger.info(f"[Status Update] Updating status for campaign {campaign_id} to {status}")
+        
+        # Validate inputs
+        if not isinstance(campaign_id, str):
+            raise ValueError("Invalid campaign_id")
+        if not isinstance(status, str):
+            raise ValueError("Invalid status")
+        if additional_data is not None and not isinstance(additional_data, dict):
+            raise ValueError("Invalid additional_data")
             
-            # Calculate statistics
-            total_requests = len(traffic_data)
-            successful_requests = sum(1 for entry in traffic_data if entry.get('success', True))
+        # Validate status value
+        valid_statuses = ["draft", "running", "completed", "error", "stopped"]
+        if status not in valid_statuses:
+            logger.warning(f"Invalid status {status}, using 'error'")
+            status = "error"
+            
+        campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
+        status_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'status.json')
+        
+        # Ensure campaign directory exists
+        os.makedirs(os.path.dirname(campaign_file), exist_ok=True)
+        
+        # Get thread lock for this campaign
+        lock = thread_locks.get(campaign_id)
+        if not lock:
+            lock = threading.Lock()
+            thread_locks[campaign_id] = lock
+            
+        with lock:
+            # Calculate statistics if file exists
+            total_requests = 0
+            successful_requests = 0
+            if os.path.exists(campaign_file):
+                try:
+                    with open(campaign_file, 'r') as f:
+                        traffic_data = json.load(f)
+                        total_requests = len(traffic_data)
+                        successful_requests = sum(1 for entry in traffic_data if entry.get('success', False))
+                except Exception as e:
+                    logger.error(f"Error reading campaign file: {str(e)}", exc_info=True)
             
             # Prepare status update
             status_data = {
@@ -836,13 +934,30 @@ def update_campaign_status(campaign_id: str, status: str, additional_data: Dict[
                 status_data.update(additional_data)
             
             # Update status file
-            status_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}_status.json')
-            with open(status_file, 'w') as f:
-                json.dump(status_data, f)
+            try:
+                with open(status_file, 'w') as f:
+                    json.dump(status_data, f, indent=2)
+                logger.info(f"[Status Update] Successfully updated status for campaign {campaign_id}")
+            except Exception as e:
+                logger.error(f"Error writing status file: {str(e)}", exc_info=True)
+                raise
             
             return status_data
+            
     except Exception as e:
-        logger.error(f"Error updating campaign status: {str(e)}")
+        logger.error(f"Error updating campaign status: {str(e)}", exc_info=True)
+        # Try to save error status
+        try:
+            error_status = {
+                "campaign_id": campaign_id,
+                "status": "error",
+                "error": str(e),
+                "last_activity_time": datetime.utcnow().isoformat()
+            }
+            with open(status_file, 'w') as f:
+                json.dump(error_status, f, indent=2)
+        except:
+            pass
         return None
 
 @bp.route("/status/<campaign_id>", methods=['GET'])
