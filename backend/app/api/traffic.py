@@ -191,18 +191,33 @@ def generate_traffic_background(config: TrafficConfig):
         logger.info(f"[Traffic Generation] Starting background traffic generation for campaign {config.campaign_id}")
         logger.info(f"[Traffic Generation] Thread ID: {thread_id}")
         logger.info(f"[Traffic Generation] Configuration: {json.dumps(config.to_dict(), indent=2)}")
+        logger.info(f"[Traffic Generation] Current working directory: {os.getcwd()}")
+        logger.info(f"[Traffic Generation] Traffic data directory: {TRAFFIC_DATA_DIR}")
+        logger.info(f"[Traffic Generation] Directory exists: {os.path.exists(TRAFFIC_DATA_DIR)}")
+        logger.info(f"[Traffic Generation] Directory permissions: {oct(os.stat(TRAFFIC_DATA_DIR).st_mode)[-3:]}")
 
         # Create campaign-specific directory and file
         campaign_dir = os.path.join(TRAFFIC_DATA_DIR, config.campaign_id)
         logger.info(f"[Traffic Generation] Creating campaign directory: {campaign_dir}")
-        os.makedirs(campaign_dir, exist_ok=True)
+        try:
+            os.makedirs(campaign_dir, exist_ok=True)
+            logger.info(f"[Traffic Generation] Campaign directory created successfully")
+            logger.info(f"[Traffic Generation] Campaign directory permissions: {oct(os.stat(campaign_dir).st_mode)[-3:]}")
+        except Exception as e:
+            logger.error(f"[Traffic Generation] Error creating campaign directory: {str(e)}", exc_info=True)
+            raise
         
         campaign_file = os.path.join(campaign_dir, 'traffic.json')
         if not os.path.exists(campaign_file):
             logger.info(f"[Traffic Generation] Creating new campaign file: {campaign_file}")
-            with open(campaign_file, 'w') as f:
-                json.dump([], f)
-            logger.info(f"[Traffic Generation] Created new campaign file successfully")
+            try:
+                with open(campaign_file, 'w') as f:
+                    json.dump([], f)
+                logger.info(f"[Traffic Generation] Created new campaign file successfully")
+                logger.info(f"[Traffic Generation] Campaign file permissions: {oct(os.stat(campaign_file).st_mode)[-3:]}")
+            except Exception as e:
+                logger.error(f"[Traffic Generation] Error creating campaign file: {str(e)}", exc_info=True)
+                raise
 
         # Calculate total requests
         total_requests = config.requests_per_minute * (config.duration_minutes or 60)
@@ -334,6 +349,7 @@ def generate_traffic():
             return jsonify({"error": error_msg}), 400
 
         campaign_id = data['campaign_id']
+        logger.info(f"[API] Processing campaign ID: {campaign_id}")
 
         # Check if traffic generation is already running
         if campaign_id in active_threads:
@@ -395,28 +411,29 @@ def generate_traffic():
             # Create traffic config
             config = TrafficConfig(**config_data)
             logger.info(f"[API] Created traffic config: {json.dumps(config.to_dict(), indent=2)}")
-        except Exception as e:
-            error_msg = f"Error creating traffic config: {str(e)}"
-            logger.error(f"[API] {error_msg}")
-            return jsonify({"error": error_msg}), 400
 
-        try:
             # Create thread lock for this campaign
+            logger.info(f"[API] Creating thread lock for campaign {campaign_id}")
             thread_locks[campaign_id] = threading.Lock()
             
             # Start traffic generation in background
+            logger.info(f"[API] Starting background thread for campaign {campaign_id}")
             thread = threading.Thread(
                 target=generate_traffic_background,
                 args=(config,),
-                daemon=True
+                daemon=True,
+                name=f"traffic_generator_{campaign_id}"
             )
             thread.start()
+            logger.info(f"[API] Background thread started for campaign {campaign_id}")
 
             # Store thread reference and ID
             thread_id = str(uuid.uuid4())
             active_threads[campaign_id] = thread_id
+            logger.info(f"[API] Stored thread ID {thread_id} for campaign {campaign_id}")
 
             # Update campaign status
+            logger.info(f"[API] Updating campaign status to running")
             update_campaign_status(campaign_id, "running")
 
             logger.info(f"[API] Successfully started traffic generation for campaign {campaign_id}")
@@ -424,7 +441,8 @@ def generate_traffic():
                 "success": True,
                 "message": "Traffic generation started",
                 "campaign_id": campaign_id,
-                "status": "running"
+                "status": "running",
+                "thread_id": thread_id
             })
         except Exception as e:
             error_msg = f"Error starting traffic generation thread: {str(e)}"
