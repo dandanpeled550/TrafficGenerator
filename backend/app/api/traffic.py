@@ -1129,4 +1129,102 @@ def health_check():
             "success": False,
             "status": "unhealthy",
             "error": f"Health check failed: {str(e)}"
+        }), 500
+
+@bp.route("/test", methods=['POST'])
+def test_traffic_functions():
+    """Test endpoint for traffic generation functions"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                "success": False,
+                "error": "No test data provided"
+            }), 400
+
+        test_type = data.get('test_type')
+        if not test_type:
+            return jsonify({
+                "success": False,
+                "error": "No test type specified"
+            }), 400
+
+        logger.info(f"[Test] Running test type: {test_type}")
+
+        if test_type == "generate_traffic_data":
+            # Test traffic data generation
+            test_config = TrafficConfig(
+                campaign_id="test_campaign",
+                target_url="https://example.com",
+                requests_per_minute=10,
+                duration_minutes=1,
+                user_profile_ids=["profile1"],
+                profile_user_counts={"profile1": 100},
+                total_profile_users=100,
+                geo_locations=["United States"],
+                rtb_config={
+                    "device_brand": "samsung",
+                    "device_models": ["Galaxy S24"],
+                    "ad_formats": ["banner"],
+                    "app_categories": ["IAB9"]
+                },
+                config={
+                    "randomize_timing": True,
+                    "enable_logging": True
+                }
+            )
+
+            # Generate traffic data
+            logger.info("[Test] Generating test traffic data")
+            traffic_data = generate_traffic_data(test_config)
+            
+            # Verify the generated data
+            verification_results = {
+                "required_fields": {
+                    "id": bool(traffic_data.get("id")),
+                    "timestamp": bool(traffic_data.get("timestamp")),
+                    "campaign_id": traffic_data.get("campaign_id") == "test_campaign",
+                    "target_url": traffic_data.get("target_url") == "https://example.com",
+                    "requests_per_minute": traffic_data.get("requests_per_minute") == 10,
+                    "duration_minutes": traffic_data.get("duration_minutes") == 1,
+                    "geo_locations": traffic_data.get("geo_locations") == ["United States"],
+                    "rtb_config": bool(traffic_data.get("rtb_config")),
+                    "config": bool(traffic_data.get("config")),
+                    "user_profile_ids": traffic_data.get("user_profile_ids") == ["profile1"],
+                    "profile_user_counts": traffic_data.get("profile_user_counts") == {"profile1": 100},
+                    "total_profile_users": traffic_data.get("total_profile_users") == 100
+                },
+                "rtb_data": {
+                    "device_brand": traffic_data.get("rtb_data", {}).get("device_brand") == "samsung",
+                    "device_model": traffic_data.get("rtb_data", {}).get("device_model") in ["Galaxy S24"],
+                    "ad_format": traffic_data.get("rtb_data", {}).get("ad_format") in ["banner"],
+                    "app_category": traffic_data.get("rtb_data", {}).get("app_category") in ["IAB9"]
+                } if "rtb_data" in traffic_data else None
+            }
+
+            # Check if all required fields are present and correct
+            all_fields_valid = all(verification_results["required_fields"].values())
+            rtb_data_valid = all(verification_results["rtb_data"].values()) if verification_results["rtb_data"] else True
+
+            return jsonify({
+                "success": True,
+                "test_type": test_type,
+                "data": traffic_data,
+                "verification": verification_results,
+                "all_fields_valid": all_fields_valid,
+                "rtb_data_valid": rtb_data_valid,
+                "timestamp": datetime.utcnow().isoformat()
+            })
+
+        else:
+            return jsonify({
+                "success": False,
+                "error": f"Unknown test type: {test_type}"
+            }), 400
+
+    except Exception as e:
+        logger.error(f"[Test] Error in test endpoint: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": f"Error in test endpoint: {str(e)}"
         }), 500 
