@@ -92,6 +92,14 @@ class TrafficConfig:
             self.created_at = datetime.utcnow()
         if self.updated_at is None:
             self.updated_at = datetime.utcnow()
+        if self.user_profile_ids is None:
+            self.user_profile_ids = []
+        if self.profile_user_counts is None:
+            self.profile_user_counts = {}
+        if self.config is None:
+            self.config = {}
+        if self.rtb_config is None:
+            self.rtb_config = {}
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert TrafficConfig to a dictionary with serializable values"""
@@ -103,6 +111,10 @@ class TrafficConfig:
             "geo_locations": self.geo_locations,
             "rtb_config": self.rtb_config,
             "config": self.config,
+            "user_profile_ids": self.user_profile_ids,
+            "profile_user_counts": self.profile_user_counts,
+            "total_profile_users": self.total_profile_users,
+            "log_file_path": self.log_file_path,
             "start_time": self.start_time.isoformat() if self.start_time else None,
             "end_time": self.end_time.isoformat() if self.end_time else None
         }
@@ -244,34 +256,14 @@ def generate_traffic():
         logger.info(f"[API] Received traffic generation request: {json.dumps(data, indent=2)}")
 
         # Validate required fields
-        required_fields = ['campaign_id', 'target_url', 'requests_per_minute']
-        missing_fields = [field for field in required_fields if field not in data]
-        if missing_fields:
-            error_msg = f"Missing required fields: {', '.join(missing_fields)}"
+        if 'campaign_id' not in data:
+            error_msg = "Missing required field: campaign_id"
             logger.error(f"[API] {error_msg}")
             return jsonify({"error": error_msg}), 400
 
-        # Validate user profiles
-        if not data.get('user_profile_ids'):
-            error_msg = "At least one user profile is required"
-            logger.error(f"[API] {error_msg}")
-            return jsonify({"error": error_msg}), 400
-
-        # Validate profile user counts
-        profile_user_counts = data.get('profile_user_counts', {})
-        if not profile_user_counts:
-            error_msg = "User counts must be specified for each profile"
-            logger.error(f"[API] {error_msg}")
-            return jsonify({"error": error_msg}), 400
-
-        total_users = sum(profile_user_counts.values())
-        if total_users == 0:
-            error_msg = "Total number of users must be greater than 0"
-            logger.error(f"[API] {error_msg}")
-            return jsonify({"error": error_msg}), 400
+        campaign_id = data['campaign_id']
 
         # Check if traffic generation is already running
-        campaign_id = data['campaign_id']
         if campaign_id in active_threads:
             error_msg = "Traffic generation is already running for this campaign"
             logger.warning(f"[API] {error_msg}")
@@ -281,22 +273,56 @@ def generate_traffic():
             }), 409
 
         try:
+            # Get campaign from database
+            campaign_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}.json')
+            if not os.path.exists(campaign_file):
+                error_msg = f"Campaign {campaign_id} not found"
+                logger.error(f"[API] {error_msg}")
+                return jsonify({"error": error_msg}), 404
+
+            with open(campaign_file, 'r') as f:
+                campaign_data = json.load(f)
+
+            # Validate campaign data
+            if not campaign_data.get('target_url'):
+                error_msg = "Campaign target URL is required"
+                logger.error(f"[API] {error_msg}")
+                return jsonify({"error": error_msg}), 400
+
+            if not campaign_data.get('user_profile_ids'):
+                error_msg = "At least one user profile is required"
+                logger.error(f"[API] {error_msg}")
+                return jsonify({"error": error_msg}), 400
+
+            profile_user_counts = campaign_data.get('profile_user_counts', {})
+            if not profile_user_counts:
+                error_msg = "User counts must be specified for each profile"
+                logger.error(f"[API] {error_msg}")
+                return jsonify({"error": error_msg}), 400
+
+            total_users = sum(profile_user_counts.values())
+            if total_users == 0:
+                error_msg = "Total number of users must be greater than 0"
+                logger.error(f"[API] {error_msg}")
+                return jsonify({"error": error_msg}), 400
+
+            # Create traffic config from campaign data
+            config_data = {
+                'campaign_id': campaign_id,
+                'target_url': campaign_data['target_url'],
+                'requests_per_minute': campaign_data.get('requests_per_minute', 10),
+                'duration_minutes': campaign_data.get('duration_minutes'),
+                'user_profile_ids': campaign_data['user_profile_ids'],
+                'profile_user_counts': profile_user_counts,
+                'total_profile_users': total_users,
+                'geo_locations': campaign_data.get('geo_locations', ["United States"]),
+                'rtb_config': campaign_data.get('rtb_config', {}),
+                'config': campaign_data.get('config', {}),
+                'log_file_path': campaign_data.get('log_file_path')
+            }
+
             # Create traffic config
-            config = TrafficConfig(
-                campaign_id=campaign_id,
-                target_url=data['target_url'],
-                requests_per_minute=data['requests_per_minute'],
-                duration_minutes=data.get('duration_minutes'),
-                user_profile_ids=data['user_profile_ids'],
-                profile_user_counts=profile_user_counts,
-                total_profile_users=total_users,
-                geo_locations=data.get('geo_locations', ["United States"]),
-                rtb_config=data.get('rtb_config', {}),
-                config=data.get('config', {}),
-                log_file_path=data.get('log_file_path'),
-                log_level=data.get('log_level'),
-                log_format=data.get('log_format')
-            )
+            config = TrafficConfig(**config_data)
             logger.info(f"[API] Created traffic config: {json.dumps(config.to_dict(), indent=2)}")
         except Exception as e:
             error_msg = f"Error creating traffic config: {str(e)}"

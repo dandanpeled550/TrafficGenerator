@@ -114,31 +114,13 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
 
     // Start traffic generation
     try {
-      // Validate required fields
-      if (!campaign.user_profile_ids || campaign.user_profile_ids.length === 0) {
-        throw new Error('At least one user profile is required');
-      }
-
-      // Set default user counts for each profile
-      const profile_user_counts = {};
-      campaign.user_profile_ids.forEach(profileId => {
-        profile_user_counts[profileId] = 5; // Set 5 users for each profile
-      });
-
+      // Only send campaign ID and any overrides
       const config = {
         campaign_id: campaign.id,
-        target_url: campaign.target_url,
-        requests_per_minute: campaign.requests_per_minute || 60,
-        duration_minutes: campaign.duration_minutes || 60,
-        user_profile_ids: campaign.user_profile_ids,
-        profile_user_counts: profile_user_counts,
-        geo_locations: campaign.geo_locations || ["United States"],
-        rtb_config: campaign.rtb_config || {},
-        config: campaign.config || {},
-        log_file_path: campaign.log_file_path,
+        // Add any runtime overrides here if needed
       };
 
-      console.log(`[Injector] Starting traffic generation with config:`, JSON.stringify(config, null, 2));
+      console.log(`[Injector] Starting traffic generation for campaign ${campaign.id}`);
       const response = await backendClient.traffic.generate(config);
 
       if (!response.success) {

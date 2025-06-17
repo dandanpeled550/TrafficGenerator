@@ -199,6 +199,7 @@ export default function Generator() {
         return;
       }
 
+      // Prepare campaign data with all necessary configuration
       const sessionData = {
         ...formData,
         duration_minutes: runIndefinitely ? null : formData.duration_minutes,
@@ -207,6 +208,27 @@ export default function Generator() {
         status: runOnSubmit ? "running" : "draft",
         profile_user_counts: profileUserCounts,
         total_profile_users: totalUsersFromProfiles,
+        // Ensure all configuration is included
+        rtb_config: {
+          ...formData.rtb_config,
+          device_brand: formData.rtb_config.device_brand || "samsung",
+          device_models: formData.rtb_config.device_models || [],
+          ad_formats: formData.rtb_config.ad_formats || [],
+          app_categories: formData.rtb_config.app_categories || [],
+          generate_adid: formData.rtb_config.generate_adid !== false,
+          simulate_bid_requests: formData.rtb_config.simulate_bid_requests !== false
+        },
+        config: {
+          ...formData.config,
+          randomize_timing: formData.config.randomize_timing !== false,
+          follow_redirects: formData.config.follow_redirects !== false,
+          simulate_browsing: formData.config.simulate_browsing || false,
+          custom_headers: formData.config.custom_headers || {},
+          enable_logging: formData.config.enable_logging !== false,
+          log_level: formData.config.log_level || "info",
+          log_format: formData.config.log_format || "csv"
+        },
+        // Set log file path if logging is enabled
         log_file_path: formData.config?.enable_logging !== false
           ? `campaign_${Date.now()}_${formData.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}.csv`
           : null,
