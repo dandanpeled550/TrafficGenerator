@@ -48,17 +48,7 @@ import {
 } from "@/components/ui/dialog";
 
 const CampaignCard = ({ campaign, onDelete, onStatusChange, allProfiles }) => {
-  const [isInjecting, setIsInjecting] = useState(false);
   const [error, setError] = useState(null);
-  const [monitoringData, setMonitoringData] = useState({
-    total_requests: 0,
-    successful_requests: 0,
-    requests_per_minute: 0,
-    success_rate: 0,
-    average_response_time: 0,
-    last_updated: null
-  });
-  const monitoringIntervalRef = useRef(null);
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -87,117 +77,7 @@ const CampaignCard = ({ campaign, onDelete, onStatusChange, allProfiles }) => {
       .join(", ");
   };
 
-  useEffect(() => {
-    return () => {
-      if (monitoringIntervalRef.current) {
-        clearInterval(monitoringIntervalRef.current);
-      }
-    };
-  }, []);
-
-  const startMonitoring = async () => {
-    const fetchMonitoringData = async () => {
-      try {
-        const response = await backendClient.traffic.monitor(campaign.id);
-        if (response.success && response.data) {
-          setMonitoringData({
-            total_requests: response.data.total_requests || 0,
-            successful_requests: response.data.successful_requests || 0,
-            requests_per_minute: response.data.requests_per_minute || 0,
-            success_rate: response.data.success_rate || 0,
-            average_response_time: response.data.average_response_time || 0,
-            last_updated: response.data.last_updated
-          });
-        }
-      } catch (error) {
-        console.error(`[Monitor] Error fetching monitoring data:`, error);
-      }
-    };
-
-    await fetchMonitoringData();
-    monitoringIntervalRef.current = setInterval(fetchMonitoringData, 2000);
-  };
-
-  const stopMonitoring = () => {
-    if (monitoringIntervalRef.current) {
-      clearInterval(monitoringIntervalRef.current);
-      monitoringIntervalRef.current = null;
-    }
-  };
-
-  const startTrafficGeneration = async (campaign) => {
-    try {
-      // Validate required fields
-      if (!campaign.user_profile_ids || campaign.user_profile_ids.length === 0) {
-        throw new Error('At least one user profile is required');
-      }
-
-      if (!campaign.profile_user_counts || Object.keys(campaign.profile_user_counts).length === 0) {
-        throw new Error('User counts must be specified for each profile');
-      }
-
-      const config = {
-        campaign_id: campaign.id,
-        target_url: campaign.target_url,
-        requests_per_minute: campaign.requests_per_minute || 60,
-        duration_minutes: campaign.duration_minutes || 60,
-        user_profile_ids: campaign.user_profile_ids,
-        profile_user_counts: campaign.profile_user_counts,
-        geo_locations: campaign.geo_locations || ["United States"],
-        rtb_config: campaign.rtb_config || {},
-        config: campaign.config || {},
-        log_file_path: campaign.log_file_path,
-        log_level: campaign.log_level,
-        log_format: campaign.log_format
-      };
-
-      console.log('Starting traffic generation with config:', JSON.stringify(config, null, 2));
-
-      // Use backendClient instead of direct fetch
-      const response = await backendClient.traffic.generate(config);
-
-      if (!response.success) {
-        let errorMessage = 'Failed to start traffic generation';
-        if (response.error) {
-          errorMessage = response.error;
-        }
-        if (response.status === 'running') {
-          errorMessage = 'Traffic generation is already running for this campaign';
-        }
-        console.error('Traffic generation error:', {
-          response: response,
-          config: config
-        });
-        throw new Error(errorMessage);
-      }
-
-      console.log('Traffic generation started successfully:', response);
-      setCampaigns(prevCampaigns =>
-        prevCampaigns.map(c =>
-          c.id === campaign.id
-            ? { ...c, status: 'running', last_started: new Date().toISOString() }
-            : c
-        )
-      );
-
-      // Start monitoring after successful start
-      await startMonitoring();
-    } catch (error) {
-      console.error('Error starting traffic generation:', error);
-      setError(error.message || 'Failed to start traffic generation');
-      setCampaigns(prevCampaigns =>
-        prevCampaigns.map(c =>
-          c.id === campaign.id
-            ? { ...c, status: 'error', error_message: error.message }
-            : c
-        )
-      );
-    }
-  };
-
   const stopTrafficGeneration = async () => {
-    stopMonitoring();
-    setIsInjecting(false);
     try {
       await backendClient.sessions.update(campaign.id, {
         status: 'stopped',
@@ -241,7 +121,7 @@ const CampaignCard = ({ campaign, onDelete, onStatusChange, allProfiles }) => {
           </div>
 
           {/* Monitoring Stats */}
-          {isInjecting && (
+          {/* {isInjecting && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="bg-slate-800/50 p-3 rounded-lg">
                 <p className="text-slate-400 text-sm">Total Requests</p>
@@ -249,53 +129,27 @@ const CampaignCard = ({ campaign, onDelete, onStatusChange, allProfiles }) => {
               </div>
               <div className="bg-slate-800/50 p-3 rounded-lg">
                 <p className="text-slate-400 text-sm">Success Rate</p>
-                <p className="text-white text-xl font-semibold">{monitoringData.success_rate.toFixed(1)}%</p>
+                <p className="text-white text-xl font-semibold">{monitoringData.success_rate.toFixed(2)}%</p>
               </div>
               <div className="bg-slate-800/50 p-3 rounded-lg">
                 <p className="text-slate-400 text-sm">Requests/Min</p>
-                <p className="text-white text-xl font-semibold">{monitoringData.requests_per_minute.toFixed(1)}</p>
+                <p className="text-white text-xl font-semibold">{monitoringData.requests_per_minute.toFixed(2)}</p>
               </div>
               <div className="bg-slate-800/50 p-3 rounded-lg">
                 <p className="text-slate-400 text-sm">Avg Response</p>
-                <p className="text-white text-xl font-semibold">{monitoringData.average_response_time.toFixed(0)}ms</p>
+                <p className="text-white text-xl font-semibold">{monitoringData.average_response_time.toFixed(2)}ms</p>
               </div>
             </div>
-          )}
+          )} */}
 
-          {/* Control Buttons */}
-          <div className="flex justify-end gap-2">
-            {!isInjecting ? (
-              <Button
-                onClick={() => startTrafficGeneration(campaign)}
-                className="bg-green-600 hover:bg-green-700 text-white"
-                disabled={campaign.status === 'running'}
-              >
-                <Play className="w-4 h-4 mr-2" />
-                Start Traffic
-              </Button>
-            ) : (
-              <Button
-                onClick={stopTrafficGeneration}
-                className="bg-red-600 hover:bg-red-700 text-white"
-              >
-                <Square className="w-4 h-4 mr-2" />
-                Stop Traffic
-              </Button>
-            )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon">
-                  <MoreVertical className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => onDelete(campaign)}>
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+          {/* DirectTrafficInjector will handle its own buttons and display now */}
+          <DirectTrafficInjector 
+            campaign={campaign} 
+            onUpdate={() => onStatusChange(campaign.id, campaign.status)}
+          />
+
+          {/* The rest of the CampaignCard content will remain here, excluding the duplicated elements now handled by DirectTrafficInjector */}
+
         </div>
       </CardContent>
     </Card>
@@ -546,14 +400,14 @@ export default function CampaignsPage() {
                   {needsTrafficInjection && (
                     <DirectTrafficInjector 
                       campaign={campaign} 
-                      onUpdate={loadData}
+                      onUpdate={() => onStatusChange(campaign.id, campaign.status)}
                     />
                   )}
 
                   {/* Main Campaign Card */}
                   <CampaignCard
                     campaign={campaign}
-                    onDelete={confirmDelete}
+                    onDelete={() => confirmDelete(campaign)}
                     onStatusChange={handleStatusChange}
                     allProfiles={allProfiles}
                   />

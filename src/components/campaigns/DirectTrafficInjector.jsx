@@ -136,8 +136,6 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
         rtb_config: campaign.rtb_config || {},
         config: campaign.config || {},
         log_file_path: campaign.log_file_path,
-        log_level: campaign.log_level,
-        log_format: campaign.log_format
       };
 
       console.log(`[Injector] Starting traffic generation with config:`, JSON.stringify(config, null, 2));
