@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 
 bp = Blueprint('traffic', __name__)
 
-TRAFFIC_DATA_DIR = os.path.join(os.path.dirname(__file__), 'traffic_data')
+# Global variables
+TRAFFIC_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'traffic')
 os.makedirs(TRAFFIC_DATA_DIR, exist_ok=True)
 ALL_TRAFFIC_FILE = os.path.join(TRAFFIC_DATA_DIR, 'all_traffic.json')
 
