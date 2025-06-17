@@ -293,9 +293,7 @@ def generate_traffic():
                 geo_locations=data.get('geo_locations', ["United States"]),
                 rtb_config=data.get('rtb_config', {}),
                 config=data.get('config', {}),
-                log_file_path=data.get('log_file_path'),
-                log_level=data.get('log_level'),
-                log_format=data.get('log_format')
+                log_file_path=data.get('log_file_path')
             )
             logger.info(f"[API] Created traffic config: {json.dumps(config.to_dict(), indent=2)}")
         except Exception as e:
