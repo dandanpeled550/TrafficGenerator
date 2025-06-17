@@ -12,76 +12,117 @@ from threading import Lock
 import uuid
 from app.api.sessions import sessions  # Import sessions storage
 
-#nonsense
 # Configure logging
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# Create a file handler
+handler = logging.FileHandler('traffic_generator.log')
+handler.setLevel(logging.DEBUG)
+
+# Create a console handler
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+
+# Create a formatter
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+console_handler.setFormatter(formatter)
+
+# Add the handlers to the logger
+logger.addHandler(handler)
+logger.addHandler(console_handler)
 
 bp = Blueprint('traffic', __name__)
 
 # Global variables
 TRAFFIC_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'traffic')
-os.makedirs(TRAFFIC_DATA_DIR, exist_ok=True)
-ALL_TRAFFIC_FILE = os.path.join(TRAFFIC_DATA_DIR, 'all_traffic.json')
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB max file size
+
+# Ensure traffic data directory exists and is writable
+try:
+    os.makedirs(TRAFFIC_DATA_DIR, exist_ok=True)
+    # Test write permissions
+    test_file = os.path.join(TRAFFIC_DATA_DIR, '.test')
+    with open(test_file, 'w') as f:
+        f.write('test')
+    os.remove(test_file)
+    logger.info(f"Traffic data directory {TRAFFIC_DATA_DIR} is writable")
+except Exception as e:
+    logger.error(f"Error setting up traffic data directory: {str(e)}")
+    raise
 
 # Add after other global variables
 active_threads = {}
 thread_locks = {}
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB max file size
 
 def append_traffic_to_file(campaign_id: str, traffic_data: Dict[str, Any]):
     """Append traffic data to campaign-specific file"""
-    try:
-        logger.info(f"[File Operation] Starting to append traffic data for campaign {campaign_id}")
-        campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
-        
-        # Ensure campaign directory exists
-        os.makedirs(os.path.dirname(campaign_file), exist_ok=True)
-        
-        # Get thread lock for this campaign
-        lock = thread_locks.get(campaign_id)
-        if not lock:
-            lock = threading.Lock()
-            thread_locks[campaign_id] = lock
-        
-        with lock:
-            # Check if file exists and create if it doesn't
-            if not os.path.exists(campaign_file):
-                logger.info(f"[File Operation] Creating new campaign file: {campaign_file}")
-                with open(campaign_file, 'w') as f:
-                    json.dump([], f)
-                logger.info(f"[File Operation] Created new campaign file successfully")
-
-            # Check file size
-            if os.path.exists(campaign_file) and os.path.getsize(campaign_file) > MAX_FILE_SIZE:
-                logger.warning(f"[File Operation] File size exceeds limit for campaign {campaign_id}")
-                # Create backup of current file
-                backup_file = f"{campaign_file}.{int(time.time())}.bak"
-                os.rename(campaign_file, backup_file)
-                # Create new file
-                with open(campaign_file, 'w') as f:
-                    json.dump([], f)
-
-            logger.debug(f"[File Operation] Opening file for read/write: {campaign_file}")
-            with open(campaign_file, 'r+') as f:
-                try:
-                    data = json.load(f)
-                    logger.debug(f"[File Operation] Successfully loaded existing data, current size: {len(data)} entries")
-                except json.JSONDecodeError:
-                    logger.warning(f"[File Operation] JSON decode error, initializing empty data array")
-                    data = []
-                
-                data.append(traffic_data)
-                logger.debug(f"[File Operation] Added new traffic data, new size: {len(data)} entries")
-                
-                f.seek(0)
-                json.dump(data, f, indent=2)
-                f.truncate()
-                logger.info(f"[File Operation] Successfully wrote updated data to file")
+    max_retries = 3
+    retry_delay = 1  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"[File Operation] Starting to append traffic data for campaign {campaign_id} (attempt {attempt + 1}/{max_retries})")
+            campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
             
-            logger.info(f"[File Operation] Successfully appended traffic data to {campaign_file}")
-    except Exception as e:
-        logger.error(f"[File Operation] Error appending traffic data: {str(e)}", exc_info=True)
-        raise
+            # Ensure campaign directory exists
+            os.makedirs(os.path.dirname(campaign_file), exist_ok=True)
+            
+            # Get thread lock for this campaign
+            lock = thread_locks.get(campaign_id)
+            if not lock:
+                lock = threading.Lock()
+                thread_locks[campaign_id] = lock
+            
+            with lock:
+                # Check if file exists and create if it doesn't
+                if not os.path.exists(campaign_file):
+                    logger.info(f"[File Operation] Creating new campaign file: {campaign_file}")
+                    with open(campaign_file, 'w') as f:
+                        json.dump([], f)
+                    logger.info(f"[File Operation] Created new campaign file successfully")
+
+                # Check file size
+                if os.path.exists(campaign_file) and os.path.getsize(campaign_file) > MAX_FILE_SIZE:
+                    logger.warning(f"[File Operation] File size exceeds limit for campaign {campaign_id}")
+                    # Create backup of current file
+                    backup_file = f"{campaign_file}.{int(time.time())}.bak"
+                    os.rename(campaign_file, backup_file)
+                    # Create new file
+                    with open(campaign_file, 'w') as f:
+                        json.dump([], f)
+
+                logger.debug(f"[File Operation] Opening file for read/write: {campaign_file}")
+                with open(campaign_file, 'r+') as f:
+                    try:
+                        data = json.load(f)
+                        logger.debug(f"[File Operation] Successfully loaded existing data, current size: {len(data)} entries")
+                    except json.JSONDecodeError:
+                        logger.warning(f"[File Operation] JSON decode error, initializing empty data array")
+                        data = []
+                    
+                    data.append(traffic_data)
+                    logger.debug(f"[File Operation] Added new traffic data, new size: {len(data)} entries")
+                    
+                    f.seek(0)
+                    json.dump(data, f, indent=2)
+                    f.truncate()
+                    logger.info(f"[File Operation] Successfully wrote updated data to file")
+                
+                logger.info(f"[File Operation] Successfully appended traffic data to {campaign_file}")
+                return True  # Success, exit retry loop
+                
+        except Exception as e:
+            logger.error(f"[File Operation] Error appending traffic data (attempt {attempt + 1}/{max_retries}): {str(e)}", exc_info=True)
+            if attempt < max_retries - 1:
+                logger.info(f"[File Operation] Retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+            else:
+                logger.error(f"[File Operation] Max retries reached, giving up")
+                raise
+    
+    return False  # All retries failed
 
 @dataclass
 class TrafficConfig:
@@ -171,6 +212,7 @@ def generate_traffic_background(config: TrafficConfig):
 
         # Generate traffic
         request_count = 0
+        successful_requests = 0
         start_time = datetime.utcnow()
         config.start_time = start_time
         end_time = start_time + timedelta(minutes=config.duration_minutes) if config.duration_minutes else None
@@ -182,7 +224,8 @@ def generate_traffic_background(config: TrafficConfig):
         logger.info(f"[Traffic Generation] Updating campaign status to running")
         update_campaign_status(config.campaign_id, "running", {
             "start_time": start_time.isoformat(),
-            "total_requests": total_requests
+            "total_requests": total_requests,
+            "thread_id": thread_id
         })
 
         while True:
@@ -209,11 +252,13 @@ def generate_traffic_background(config: TrafficConfig):
 
                 # Save to campaign-specific file
                 logger.debug(f"[Traffic Generation] Saving request {request_count + 1} to file")
-                with thread_locks.get(config.campaign_id, Lock()):
-                    append_traffic_to_file(config.campaign_id, response_data)
-                
-                request_count += 1
-                logger.info(f"[Traffic Generation] Successfully saved request {request_count} for campaign {config.campaign_id}")
+                if append_traffic_to_file(config.campaign_id, response_data):
+                    request_count += 1
+                    if response_data.get('success'):
+                        successful_requests += 1
+                    logger.info(f"[Traffic Generation] Successfully saved request {request_count} for campaign {config.campaign_id}")
+                else:
+                    logger.error(f"[Traffic Generation] Failed to save request {request_count + 1} for campaign {config.campaign_id}")
 
                 # Update progress
                 progress = (request_count / total_requests) * 100 if total_requests > 0 else 0
@@ -221,7 +266,8 @@ def generate_traffic_background(config: TrafficConfig):
                 update_campaign_status(config.campaign_id, "running", {
                     "progress_percentage": progress,
                     "total_requests": request_count,
-                    "successful_requests": request_count if response_data.get('success') else request_count - 1
+                    "successful_requests": successful_requests,
+                    "last_updated": datetime.utcnow().isoformat()
                 })
 
                 # Calculate sleep time
@@ -235,7 +281,9 @@ def generate_traffic_background(config: TrafficConfig):
                 logger.error(f"[Traffic Generation] Error in traffic generation loop: {str(e)}", exc_info=True)
                 update_campaign_status(config.campaign_id, "error", {
                     "error": str(e),
-                    "last_request_count": request_count
+                    "last_request_count": request_count,
+                    "successful_requests": successful_requests,
+                    "last_updated": datetime.utcnow().isoformat()
                 })
                 time.sleep(1)  # Prevent tight loop on error
 
@@ -245,17 +293,19 @@ def generate_traffic_background(config: TrafficConfig):
         update_campaign_status(config.campaign_id, final_status, {
             "end_time": datetime.utcnow().isoformat(),
             "total_requests": request_count,
-            "successful_requests": request_count if response_data.get('success') else request_count - 1
+            "successful_requests": successful_requests,
+            "last_updated": datetime.utcnow().isoformat()
         })
 
         logger.info(f"[Traffic Generation] Completed traffic generation for campaign {config.campaign_id}")
-        logger.info(f"[Traffic Generation] Generated {request_count} requests")
+        logger.info(f"[Traffic Generation] Generated {request_count} requests ({successful_requests} successful)")
         logger.info(f"[Traffic Generation] Final status: {final_status}")
 
     except Exception as e:
         logger.error(f"[Traffic Generation] Error in background traffic generation: {str(e)}", exc_info=True)
         update_campaign_status(config.campaign_id, "error", {
-            "error": str(e)
+            "error": str(e),
+            "last_updated": datetime.utcnow().isoformat()
         })
     finally:
         logger.info(f"[Traffic Generation] Cleaning up resources for campaign {config.campaign_id}")
@@ -1032,6 +1082,28 @@ def health_check():
                 "error": f"Traffic data directory not writable: {str(e)}"
             }), 500
 
+        # Get system information
+        active_campaigns = list(active_threads.keys())
+        campaign_stats = {}
+        
+        for campaign_id in active_campaigns:
+            campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
+            if os.path.exists(campaign_file):
+                try:
+                    with open(campaign_file, 'r') as f:
+                        data = json.load(f)
+                        campaign_stats[campaign_id] = {
+                            "total_requests": len(data),
+                            "successful_requests": sum(1 for entry in data if entry.get('success', False)),
+                            "last_updated": datetime.utcnow().isoformat()
+                        }
+                except Exception as e:
+                    logger.error(f"Error reading campaign file {campaign_id}: {str(e)}")
+                    campaign_stats[campaign_id] = {
+                        "error": str(e),
+                        "last_updated": datetime.utcnow().isoformat()
+                    }
+
         logger.info("Health check passed")
         return jsonify({
             "success": True,
@@ -1039,7 +1111,15 @@ def health_check():
             "message": "Traffic generation service is healthy",
             "data": {
                 "traffic_data_dir": TRAFFIC_DATA_DIR,
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.utcnow().isoformat(),
+                "active_campaigns": active_campaigns,
+                "campaign_stats": campaign_stats,
+                "total_active_campaigns": len(active_campaigns),
+                "system_info": {
+                    "python_version": os.sys.version,
+                    "platform": os.sys.platform,
+                    "max_file_size": MAX_FILE_SIZE
+                }
             }
         }), 200
 
