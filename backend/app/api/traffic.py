@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 import logging
 from threading import Lock
 import uuid
+from app.api.sessions import sessions  # Import sessions storage
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -273,15 +274,14 @@ def generate_traffic():
             }), 409
 
         try:
-            # Get campaign from database
-            campaign_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}.json')
-            if not os.path.exists(campaign_file):
+            # Get campaign from sessions storage
+            if campaign_id not in sessions:
                 error_msg = f"Campaign {campaign_id} not found"
                 logger.error(f"[API] {error_msg}")
                 return jsonify({"error": error_msg}), 404
 
-            with open(campaign_file, 'r') as f:
-                campaign_data = json.load(f)
+            campaign_data = sessions[campaign_id].to_dict()
+            logger.info(f"[API] Retrieved campaign data: {json.dumps(campaign_data, indent=2)}")
 
             # Validate campaign data
             if not campaign_data.get('target_url'):
