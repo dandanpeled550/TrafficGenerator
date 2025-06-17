@@ -31,7 +31,8 @@ import {
   Loader2,
   Wand2,
   Trash2,
-  Zap
+  Zap,
+  Activity
 } from "lucide-react";
 import {
   Dialog,
@@ -71,6 +72,8 @@ export default function Generator() {
   const [profileUserCounts, setProfileUserCounts] = useState({});
   const [isEditing, setIsEditing] = useState(false);
   const [editingCampaignId, setEditingCampaignId] = useState(null);
+  const [campaignStatus, setCampaignStatus] = useState(null);
+  const [statusCheckInterval, setStatusCheckInterval] = useState(null);
   const [formData, setFormData] = useState({
     id: "",
     name: "",
@@ -118,6 +121,34 @@ export default function Generator() {
       loadCampaignForEditing(editId);
     }
   }, [location.search]);
+
+  useEffect(() => {
+    if (editingCampaignId) {
+      // Start status checking
+      const interval = setInterval(async () => {
+        try {
+          const response = await backendClient.traffic.getStatus(editingCampaignId);
+          setCampaignStatus(response.data);
+          
+          // If campaign is completed or error, stop checking
+          if (response.data.status === 'completed' || response.data.status === 'error') {
+            clearInterval(interval);
+          }
+        } catch (error) {
+          console.error("Failed to check campaign status:", error);
+        }
+      }, 5000); // Check every 5 seconds
+      
+      setStatusCheckInterval(interval);
+      
+      // Cleanup on unmount
+      return () => {
+        if (interval) {
+          clearInterval(interval);
+        }
+      };
+    }
+  }, [editingCampaignId]);
 
   const fetchUserProfiles = async () => {
     try {
@@ -361,6 +392,68 @@ export default function Generator() {
     </Card>
   );
 
+  // Add status display component
+  const renderStatusBadge = () => {
+    if (!campaignStatus) return null;
+    
+    const statusColors = {
+      running: 'bg-green-500/20 text-green-300 border-green-500/30',
+      completed: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+      error: 'bg-red-500/20 text-red-300 border-red-500/30',
+      stopped: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+      draft: 'bg-slate-500/20 text-slate-300 border-slate-500/30'
+    };
+    
+    return (
+      <div className="flex items-center gap-2 mb-4">
+        <Badge className={statusColors[campaignStatus.status] || statusColors.draft}>
+          {campaignStatus.status.toUpperCase()}
+        </Badge>
+        {campaignStatus.progress_percentage > 0 && (
+          <span className="text-sm text-slate-400">
+            Progress: {campaignStatus.progress_percentage.toFixed(1)}%
+          </span>
+        )}
+      </div>
+    );
+  };
+
+  // Add campaign info display
+  const renderCampaignInfo = () => {
+    if (!formData.name) return null;
+    
+    return (
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold text-white mb-2">{formData.name}</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="p-3 bg-slate-800/30 rounded-lg border border-slate-700">
+            <div className="flex items-center gap-2 mb-1">
+              <Target className="w-4 h-4 text-green-400" />
+              <span className="text-xs text-slate-400 uppercase tracking-wide">Target URL</span>
+            </div>
+            <p className="text-sm text-white font-semibold truncate">{formData.target_url}</p>
+          </div>
+          
+          <div className="p-3 bg-slate-800/30 rounded-lg border border-slate-700">
+            <div className="flex items-center gap-2 mb-1">
+              <Activity className="w-4 h-4 text-blue-400" />
+              <span className="text-xs text-slate-400 uppercase tracking-wide">Traffic Rate</span>
+            </div>
+            <p className="text-sm text-white font-semibold">{formData.requests_per_minute} requests/min</p>
+          </div>
+          
+          <div className="p-3 bg-slate-800/30 rounded-lg border border-slate-700">
+            <div className="flex items-center gap-2 mb-1">
+              <UsersIcon className="w-4 h-4 text-purple-400" />
+              <span className="text-xs text-slate-400 uppercase tracking-wide">Total Users</span>
+            </div>
+            <p className="text-sm text-white font-semibold">{formData.total_profile_users}</p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -503,6 +596,9 @@ export default function Generator() {
             </CardContent>
           </Card>
         </form>
+
+        {renderCampaignInfo()}
+        {renderStatusBadge()}
       </div>
     </div>
   );
