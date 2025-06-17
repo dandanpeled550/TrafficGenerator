@@ -396,21 +396,20 @@ export default function CampaignsPage() {
                   transition={{ delay: index * 0.05 }}
                   className="space-y-4"
                 >
-                  {/* Direct Traffic Injector - Show for campaigns that need it */}
-                  {needsTrafficInjection && (
+                  {/* Show either DirectTrafficInjector or CampaignCard, not both */}
+                  {needsTrafficInjection ? (
                     <DirectTrafficInjector 
                       campaign={campaign} 
                       onUpdate={() => onStatusChange(campaign.id, campaign.status)}
                     />
+                  ) : (
+                    <CampaignCard
+                      campaign={campaign}
+                      onDelete={() => confirmDelete(campaign)}
+                      onStatusChange={handleStatusChange}
+                      allProfiles={allProfiles}
+                    />
                   )}
-
-                  {/* Main Campaign Card */}
-                  <CampaignCard
-                    campaign={campaign}
-                    onDelete={() => confirmDelete(campaign)}
-                    onStatusChange={handleStatusChange}
-                    allProfiles={allProfiles}
-                  />
                 </motion.div>
                 )
               })}
