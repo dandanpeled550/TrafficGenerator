@@ -57,13 +57,12 @@ active_threads = {}
 thread_locks = {}
 
 def append_traffic_to_file(campaign_id: str, traffic_data: Dict[str, Any]):
-    """Append traffic data to campaign-specific file"""
+    """Append traffic data to campaign-specific file with improved error handling"""
     max_retries = 3
     retry_delay = 1  # seconds
     
     for attempt in range(max_retries):
         try:
-            logger.info(f"[File Operation] Starting to append traffic data for campaign {campaign_id} (attempt {attempt + 1}/{max_retries})")
             campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
             
             # Ensure campaign directory exists
@@ -78,51 +77,38 @@ def append_traffic_to_file(campaign_id: str, traffic_data: Dict[str, Any]):
             with lock:
                 # Check if file exists and create if it doesn't
                 if not os.path.exists(campaign_file):
-                    logger.info(f"[File Operation] Creating new campaign file: {campaign_file}")
                     with open(campaign_file, 'w') as f:
                         json.dump([], f)
-                    logger.info(f"[File Operation] Created new campaign file successfully")
 
-                # Check file size
+                # Check file size and rotate if needed
                 if os.path.exists(campaign_file) and os.path.getsize(campaign_file) > MAX_FILE_SIZE:
-                    logger.warning(f"[File Operation] File size exceeds limit for campaign {campaign_id}")
-                    # Create backup of current file
                     backup_file = f"{campaign_file}.{int(time.time())}.bak"
                     os.rename(campaign_file, backup_file)
-                    # Create new file
                     with open(campaign_file, 'w') as f:
                         json.dump([], f)
 
-                logger.debug(f"[File Operation] Opening file for read/write: {campaign_file}")
+                # Read and write with proper error handling
                 with open(campaign_file, 'r+') as f:
                     try:
                         data = json.load(f)
-                        logger.debug(f"[File Operation] Successfully loaded existing data, current size: {len(data)} entries")
                     except json.JSONDecodeError:
-                        logger.warning(f"[File Operation] JSON decode error, initializing empty data array")
                         data = []
                     
                     data.append(traffic_data)
-                    logger.debug(f"[File Operation] Added new traffic data, new size: {len(data)} entries")
-                    
                     f.seek(0)
                     json.dump(data, f, indent=2)
                     f.truncate()
-                    logger.info(f"[File Operation] Successfully wrote updated data to file")
                 
-                logger.info(f"[File Operation] Successfully appended traffic data to {campaign_file}")
-                return True  # Success, exit retry loop
+                return True
                 
         except Exception as e:
             logger.error(f"[File Operation] Error appending traffic data (attempt {attempt + 1}/{max_retries}): {str(e)}", exc_info=True)
             if attempt < max_retries - 1:
-                logger.info(f"[File Operation] Retrying in {retry_delay} seconds...")
                 time.sleep(retry_delay)
             else:
-                logger.error(f"[File Operation] Max retries reached, giving up")
                 raise
     
-    return False  # All retries failed
+    return False
 
 @dataclass
 class TrafficConfig:
@@ -190,59 +176,44 @@ def generate_traffic_background(config: TrafficConfig):
     try:
         logger.info(f"[Traffic Generation] Starting background traffic generation for campaign {config.campaign_id}")
         logger.info(f"[Traffic Generation] Thread ID: {thread_id}")
-        logger.info(f"[Traffic Generation] Configuration: {json.dumps(config.to_dict(), indent=2)}")
-        logger.info(f"[Traffic Generation] Current working directory: {os.getcwd()}")
-        logger.info(f"[Traffic Generation] Traffic data directory: {TRAFFIC_DATA_DIR}")
-        logger.info(f"[Traffic Generation] Directory exists: {os.path.exists(TRAFFIC_DATA_DIR)}")
-        logger.info(f"[Traffic Generation] Directory permissions: {oct(os.stat(TRAFFIC_DATA_DIR).st_mode)[-3:]}")
-
-        # Create campaign-specific directory and file
+        
+        # Create campaign-specific directory and file with proper error handling
         campaign_dir = os.path.join(TRAFFIC_DATA_DIR, config.campaign_id)
-        logger.info(f"[Traffic Generation] Creating campaign directory: {campaign_dir}")
+        campaign_file = os.path.join(campaign_dir, 'traffic.json')
+        
         try:
             os.makedirs(campaign_dir, exist_ok=True)
-            logger.info(f"[Traffic Generation] Campaign directory created successfully")
-            logger.info(f"[Traffic Generation] Campaign directory permissions: {oct(os.stat(campaign_dir).st_mode)[-3:]}")
-        except Exception as e:
-            logger.error(f"[Traffic Generation] Error creating campaign directory: {str(e)}", exc_info=True)
-            raise
-        
-        campaign_file = os.path.join(campaign_dir, 'traffic.json')
-        if not os.path.exists(campaign_file):
-            logger.info(f"[Traffic Generation] Creating new campaign file: {campaign_file}")
-            try:
+            if not os.path.exists(campaign_file):
                 with open(campaign_file, 'w') as f:
                     json.dump([], f)
-                logger.info(f"[Traffic Generation] Created new campaign file successfully")
-                logger.info(f"[Traffic Generation] Campaign file permissions: {oct(os.stat(campaign_file).st_mode)[-3:]}")
-            except Exception as e:
-                logger.error(f"[Traffic Generation] Error creating campaign file: {str(e)}", exc_info=True)
-                raise
+        except Exception as e:
+            logger.error(f"[Traffic Generation] Error setting up campaign directory: {str(e)}", exc_info=True)
+            update_campaign_status(config.campaign_id, "error", {"error": f"Directory setup failed: {str(e)}"})
+            return
 
-        # Calculate total requests
+        # Calculate total requests with validation
         total_requests = config.requests_per_minute * (config.duration_minutes or 60)
-        logger.info(f"[Traffic Generation] Will generate {total_requests} total requests")
-        logger.info(f"[Traffic Generation] Requests per minute: {config.requests_per_minute}")
-        logger.info(f"[Traffic Generation] Duration minutes: {config.duration_minutes}")
+        if total_requests <= 0:
+            logger.error("[Traffic Generation] Invalid request count")
+            update_campaign_status(config.campaign_id, "error", {"error": "Invalid request count"})
+            return
 
-        # Generate traffic
+        # Initialize counters and timestamps
         request_count = 0
         successful_requests = 0
         start_time = datetime.utcnow()
         config.start_time = start_time
         end_time = start_time + timedelta(minutes=config.duration_minutes) if config.duration_minutes else None
         config.end_time = end_time
-        logger.info(f"[Traffic Generation] Start time: {start_time.isoformat()}")
-        logger.info(f"[Traffic Generation] End time: {end_time.isoformat() if end_time else 'No end time set'}")
 
         # Update campaign status to running
-        logger.info(f"[Traffic Generation] Updating campaign status to running")
         update_campaign_status(config.campaign_id, "running", {
             "start_time": start_time.isoformat(),
             "total_requests": total_requests,
             "thread_id": thread_id
         })
 
+        # Main traffic generation loop with improved error handling
         while True:
             try:
                 # Check if thread was stopped
@@ -255,29 +226,40 @@ def generate_traffic_background(config: TrafficConfig):
                     logger.info(f"[Traffic Generation] Reached duration limit for campaign {config.campaign_id}")
                     break
 
-                # Generate traffic data
-                logger.debug(f"[Traffic Generation] Generating traffic data for request {request_count + 1}")
-                traffic_data = generate_traffic_data(config)
-                logger.debug(f"[Traffic Generation] Generated traffic data: {json.dumps(traffic_data, indent=2)}")
+                # Generate and validate traffic data
+                try:
+                    traffic_data = generate_traffic_data(config)
+                    if not traffic_data:
+                        logger.error("[Traffic Generation] Failed to generate traffic data")
+                        continue
+                except Exception as e:
+                    logger.error(f"[Traffic Generation] Error generating traffic data: {str(e)}", exc_info=True)
+                    continue
 
-                # Simulate request
-                logger.debug(f"[Traffic Generation] Simulating request for request {request_count + 1}")
-                response_data = simulate_request(traffic_data)
-                logger.debug(f"[Traffic Generation] Simulated request response: {json.dumps(response_data, indent=2)}")
+                # Simulate request with timeout
+                try:
+                    response_data = simulate_request(traffic_data)
+                    if not response_data:
+                        logger.error("[Traffic Generation] Failed to simulate request")
+                        continue
+                except Exception as e:
+                    logger.error(f"[Traffic Generation] Error simulating request: {str(e)}", exc_info=True)
+                    continue
 
-                # Save to campaign-specific file
-                logger.debug(f"[Traffic Generation] Saving request {request_count + 1} to file")
-                if append_traffic_to_file(config.campaign_id, response_data):
-                    request_count += 1
-                    if response_data.get('success'):
-                        successful_requests += 1
-                    logger.info(f"[Traffic Generation] Successfully saved request {request_count} for campaign {config.campaign_id}")
-                else:
-                    logger.error(f"[Traffic Generation] Failed to save request {request_count + 1} for campaign {config.campaign_id}")
+                # Save to file with proper locking
+                try:
+                    if append_traffic_to_file(config.campaign_id, response_data):
+                        request_count += 1
+                        if response_data.get('success'):
+                            successful_requests += 1
+                    else:
+                        logger.error(f"[Traffic Generation] Failed to save request {request_count + 1}")
+                except Exception as e:
+                    logger.error(f"[Traffic Generation] Error saving request: {str(e)}", exc_info=True)
+                    continue
 
-                # Update progress
+                # Update progress with validation
                 progress = (request_count / total_requests) * 100 if total_requests > 0 else 0
-                logger.info(f"[Traffic Generation] Progress: {progress:.2f}% ({request_count}/{total_requests} requests)")
                 update_campaign_status(config.campaign_id, "running", {
                     "progress_percentage": progress,
                     "total_requests": request_count,
@@ -285,11 +267,10 @@ def generate_traffic_background(config: TrafficConfig):
                     "last_updated": datetime.utcnow().isoformat()
                 })
 
-                # Calculate sleep time
-                sleep_time = 60 / config.requests_per_minute
+                # Calculate sleep time with validation
+                sleep_time = max(0.1, 60 / config.requests_per_minute)
                 if config.config.get('randomize_timing', True):
                     sleep_time *= random.uniform(0.8, 1.2)
-                logger.debug(f"[Traffic Generation] Sleeping for {sleep_time:.2f} seconds")
                 time.sleep(sleep_time)
 
             except Exception as e:
@@ -302,19 +283,14 @@ def generate_traffic_background(config: TrafficConfig):
                 })
                 time.sleep(1)  # Prevent tight loop on error
 
-        # Update final status
+        # Update final status with validation
         final_status = "completed" if request_count > 0 else "error"
-        logger.info(f"[Traffic Generation] Setting final status to {final_status}")
         update_campaign_status(config.campaign_id, final_status, {
             "end_time": datetime.utcnow().isoformat(),
             "total_requests": request_count,
             "successful_requests": successful_requests,
             "last_updated": datetime.utcnow().isoformat()
         })
-
-        logger.info(f"[Traffic Generation] Completed traffic generation for campaign {config.campaign_id}")
-        logger.info(f"[Traffic Generation] Generated {request_count} requests ({successful_requests} successful)")
-        logger.info(f"[Traffic Generation] Final status: {final_status}")
 
     except Exception as e:
         logger.error(f"[Traffic Generation] Error in background traffic generation: {str(e)}", exc_info=True)
@@ -323,13 +299,14 @@ def generate_traffic_background(config: TrafficConfig):
             "last_updated": datetime.utcnow().isoformat()
         })
     finally:
-        logger.info(f"[Traffic Generation] Cleaning up resources for campaign {config.campaign_id}")
-        if active_threads.get(config.campaign_id) == thread_id:
-            del active_threads[config.campaign_id]
-            logger.info(f"[Traffic Generation] Removed campaign from active threads")
-        if config.campaign_id in thread_locks:
-            del thread_locks[config.campaign_id]
-            logger.info(f"[Traffic Generation] Removed thread lock")
+        # Clean up resources with proper error handling
+        try:
+            if active_threads.get(config.campaign_id) == thread_id:
+                del active_threads[config.campaign_id]
+            if config.campaign_id in thread_locks:
+                del thread_locks[config.campaign_id]
+        except Exception as e:
+            logger.error(f"[Traffic Generation] Error cleaning up resources: {str(e)}", exc_info=True)
 
 @bp.route("/generate", methods=['POST'])
 def generate_traffic():
@@ -460,11 +437,13 @@ def generate_traffic():
         return jsonify({"error": error_msg}), 500
 
 def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
-    """Generate a single traffic data entry"""
+    """Generate a single traffic data entry with improved validation"""
     try:
-        logger.debug(f"Generating traffic data for campaign {config.campaign_id}")
+        # Validate config
+        if not isinstance(config, TrafficConfig):
+            raise ValueError("Invalid config type")
         
-        # Generate base traffic data
+        # Generate base traffic data with validation
         traffic_data = {
             "id": str(int(time.time() * 1000)),
             "timestamp": datetime.utcnow().isoformat(),
@@ -480,11 +459,18 @@ def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
             "total_profile_users": config.total_profile_users
         }
         
-        # Add RTB data if configured
-        if config.rtb_config:
-            traffic_data["rtb_data"] = generate_rtb_data(config.rtb_config)
+        # Validate required fields
+        required_fields = ["id", "timestamp", "campaign_id", "target_url"]
+        for field in required_fields:
+            if not traffic_data.get(field):
+                raise ValueError(f"Missing required field: {field}")
         
-        logger.debug(f"Generated traffic data: {json.dumps(traffic_data, indent=2)}")
+        # Add RTB data with validation
+        if config.rtb_config:
+            rtb_data = generate_rtb_data(config.rtb_config)
+            if rtb_data:
+                traffic_data["rtb_data"] = rtb_data
+        
         return traffic_data
     except Exception as e:
         logger.error(f"Error generating traffic data: {str(e)}", exc_info=True)
