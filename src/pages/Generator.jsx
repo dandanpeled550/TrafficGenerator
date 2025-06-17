@@ -191,13 +191,31 @@ export default function Generator() {
         return;
       }
 
-      // Validate total users
-      const totalUsersFromProfiles = Object.values(profileUserCounts).reduce((sum, count) => sum + count, 0);
+      // Validate user counts
+      const totalUsersFromProfiles = Object.entries(profileUserCounts).reduce((sum, [profileId, count]) => {
+        // Only count if the profile is selected and count is positive
+        if (formData.user_profile_ids.includes(profileId) && count > 0) {
+          return sum + count;
+        }
+        return sum;
+      }, 0);
+
       if (totalUsersFromProfiles === 0) {
-        alert("Please set the number of users for at least one profile.");
+        alert("Please set a positive number of users for at least one selected profile.");
         setIsCreating(false);
         return;
       }
+
+      // Validate RTB configuration
+      const rtb_config = {
+        ...formData.rtb_config,
+        device_brand: formData.rtb_config?.device_brand || "samsung",
+        device_models: formData.rtb_config?.device_models || SAMSUNG_MODELS.slice(0, 3),
+        ad_formats: formData.rtb_config?.ad_formats || ['banner', 'interstitial', 'native'],
+        app_categories: formData.rtb_config?.app_categories || ['Games', 'Social Media', 'Shopping'],
+        generate_adid: formData.rtb_config?.generate_adid !== false,
+        simulate_bid_requests: formData.rtb_config?.simulate_bid_requests !== false
+      };
 
       // Prepare campaign data with all necessary configuration
       const sessionData = {
@@ -206,35 +224,31 @@ export default function Generator() {
         user_agents: DEFAULT_USER_AGENTS,
         referrers: DEFAULT_REFERRERS.organic.concat(DEFAULT_REFERRERS.social, DEFAULT_REFERRERS.referral),
         status: runOnSubmit ? "running" : "draft",
-        profile_user_counts: profileUserCounts,
+        profile_user_counts: Object.fromEntries(
+          Object.entries(profileUserCounts)
+            .filter(([profileId, count]) => 
+              formData.user_profile_ids.includes(profileId) && count > 0
+            )
+        ),
         total_profile_users: totalUsersFromProfiles,
-        // Ensure all configuration is included
-        rtb_config: {
-          ...formData.rtb_config,
-          device_brand: formData.rtb_config.device_brand || "samsung",
-          device_models: formData.rtb_config.device_models || [],
-          ad_formats: formData.rtb_config.ad_formats || [],
-          app_categories: formData.rtb_config.app_categories || [],
-          generate_adid: formData.rtb_config.generate_adid !== false,
-          simulate_bid_requests: formData.rtb_config.simulate_bid_requests !== false
-        },
+        rtb_config,
         config: {
           ...formData.config,
-          randomize_timing: formData.config.randomize_timing !== false,
-          follow_redirects: formData.config.follow_redirects !== false,
-          simulate_browsing: formData.config.simulate_browsing || false,
-          custom_headers: formData.config.custom_headers || {},
-          enable_logging: formData.config.enable_logging !== false,
-          log_level: formData.config.log_level || "info",
-          log_format: formData.config.log_format || "csv"
+          randomize_timing: formData.config?.randomize_timing !== false,
+          follow_redirects: formData.config?.follow_redirects !== false,
+          simulate_browsing: formData.config?.simulate_browsing || false,
+          custom_headers: formData.config?.custom_headers || {},
+          enable_logging: formData.config?.enable_logging !== false,
+          log_level: formData.config?.log_level || "info",
+          log_format: formData.config?.log_format || "csv"
         },
         // Set log file path if logging is enabled
         log_file_path: formData.config?.enable_logging !== false
           ? `campaign_${Date.now()}_${formData.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}.csv`
           : null,
-        log_level: formData.config?.enable_logging !== false ? formData.config.log_level : null,
+        log_level: formData.config?.enable_logging !== false ? formData.config?.log_level : null,
         log_format: formData.config?.enable_logging !== false
-          ? formData.config.log_format || 'csv'
+          ? formData.config?.log_format || 'csv'
           : null
       };
 
