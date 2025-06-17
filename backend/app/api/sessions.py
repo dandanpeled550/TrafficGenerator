@@ -112,6 +112,25 @@ def create_session():
 
         session_id = f"session_{len(sessions) + 1}"
         
+        # Ensure rtb_config has all required fields
+        rtb_config = data.get('rtb_config', {})
+        if not isinstance(rtb_config, dict):
+            rtb_config = {}
+        rtb_config.setdefault('device_brand', 'samsung')
+        rtb_config.setdefault('device_models', [])
+        rtb_config.setdefault('ad_formats', [])
+        rtb_config.setdefault('app_categories', [])
+        rtb_config.setdefault('generate_adid', True)
+        rtb_config.setdefault('simulate_bid_requests', True)
+
+        # Ensure profile_user_counts is a dictionary
+        profile_user_counts = data.get('profile_user_counts', {})
+        if not isinstance(profile_user_counts, dict):
+            profile_user_counts = {}
+
+        # Calculate total profile users
+        total_profile_users = sum(profile_user_counts.values())
+        
         new_session = Session(
             id=session_id,
             name=data['name'],
@@ -122,9 +141,16 @@ def create_session():
             requests_per_minute=data.get('requests_per_minute', 10),
             duration_minutes=data.get('duration_minutes', 60),
             geo_locations=data.get('geo_locations', ["United States"]),
-            rtb_config=data.get('rtb_config'),
-            config=data.get('config'),
-            user_profile_ids=data.get('user_profile_ids', [])
+            rtb_config=rtb_config,
+            config=data.get('config', {}),
+            user_profile_ids=data.get('user_profile_ids', []),
+            profile_user_counts=profile_user_counts,
+            total_profile_users=total_profile_users,
+            log_file_path=data.get('log_file_path'),
+            log_level=data.get('log_level'),
+            log_format=data.get('log_format'),
+            user_agents=data.get('user_agents', []),
+            referrers=data.get('referrers', [])
         )
         new_session = ensure_datetime_fields(new_session)
         sessions[session_id] = new_session
@@ -167,9 +193,30 @@ def update_session(session_id: str):
             
         session = sessions[session_id]
         
-        # Update fields if provided
+        # Handle rtb_config update
+        if 'rtb_config' in data:
+            rtb_config = data['rtb_config']
+            if not isinstance(rtb_config, dict):
+                rtb_config = {}
+            rtb_config.setdefault('device_brand', 'samsung')
+            rtb_config.setdefault('device_models', [])
+            rtb_config.setdefault('ad_formats', [])
+            rtb_config.setdefault('app_categories', [])
+            rtb_config.setdefault('generate_adid', True)
+            rtb_config.setdefault('simulate_bid_requests', True)
+            session.rtb_config = rtb_config
+
+        # Handle profile_user_counts update
+        if 'profile_user_counts' in data:
+            profile_user_counts = data['profile_user_counts']
+            if not isinstance(profile_user_counts, dict):
+                profile_user_counts = {}
+            session.profile_user_counts = profile_user_counts
+            session.total_profile_users = sum(profile_user_counts.values())
+        
+        # Update other fields if provided
         for field, value in data.items():
-            if hasattr(session, field):
+            if field not in ['rtb_config', 'profile_user_counts'] and hasattr(session, field):
                 if field in ['created_at', 'updated_at', 'start_time', 'end_time', 'last_activity_time']:
                     # Convert string to datetime if needed
                     if isinstance(value, str):
@@ -180,6 +227,7 @@ def update_session(session_id: str):
                             logger.warning(f"Invalid datetime format for {field}: {value}, error: {str(e)}")
                             continue
                 setattr(session, field, value)
+
         session = ensure_datetime_fields(session)
         session.updated_at = datetime.utcnow()
         logger.info(f"Updated session {session_id}")
