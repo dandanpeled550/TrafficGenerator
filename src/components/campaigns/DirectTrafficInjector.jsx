@@ -1,67 +1,66 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef, useEffect } from "react";
 import backendClient from "@/api/backendClient";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import { Play, Square, Zap, Loader2, Server, AlertCircle, CheckCircle, XCircle } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AlertCircle, Play, Square, Loader2, Zap, Activity, TrendingUp, Users, Globe } from "lucide-react";
 import { motion } from "framer-motion";
 
 export default function DirectTrafficInjector({ campaign, onUpdate }) {
   const [isInjecting, setIsInjecting] = useState(false);
   const [error, setError] = useState(null);
-  const [monitoringData, setMonitoringData] = useState({
-    total_requests: 0,
-    successful_requests: 0,
-    requests_per_minute: 0,
-    success_rate: 0,
-    average_response_time: 0,
-    last_updated: null
+  const [stats, setStats] = useState({
+    totalRequests: 0,
+    successfulRequests: 0,
+    successRate: 0,
+    isRunning: false
   });
   const intervalRef = useRef(null);
-  const monitoringIntervalRef = useRef(null);
 
   useEffect(() => {
+    // Cleanup interval on unmount
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
-      }
-      if (monitoringIntervalRef.current) {
-        clearInterval(monitoringIntervalRef.current);
       }
     };
   }, []);
 
   const startMonitoring = async () => {
-    const fetchMonitoringData = async () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+    }
+
+    intervalRef.current = setInterval(async () => {
       try {
-        const response = await backendClient.traffic.monitor(campaign.id);
-        if (response.success && response.data) {
-          setMonitoringData({
-            total_requests: response.data.total_requests || 0,
-            successful_requests: response.data.successful_requests || 0,
-            requests_per_minute: response.data.requests_per_minute || 0,
-            success_rate: response.data.success_rate || 0,
-            average_response_time: response.data.average_response_time || 0,
-            last_updated: response.data.last_updated
+        const campaignInfo = await backendClient.traffic.getCampaignInfo(campaign.id);
+        if (campaignInfo.success) {
+          const trafficStats = campaignInfo.data.traffic_stats;
+          const trafficGeneration = campaignInfo.data.traffic_generation;
+          
+          setStats({
+            totalRequests: trafficStats.total_requests,
+            successfulRequests: trafficStats.successful_requests,
+            successRate: trafficStats.success_rate,
+            isRunning: trafficGeneration.is_running
           });
+
+          // If traffic generation stopped, clear interval
+          if (!trafficGeneration.is_running) {
+            clearInterval(intervalRef.current);
+            intervalRef.current = null;
+          }
         }
       } catch (error) {
-        console.error(`[Monitor] Error fetching monitoring data:`, error);
+        console.error('Error monitoring campaign:', error);
       }
-    };
-
-    // Fetch immediately and then every 2 seconds
-    await fetchMonitoringData();
-    monitoringIntervalRef.current = setInterval(fetchMonitoringData, 2000);
+    }, 2000); // Check every 2 seconds
   };
 
   const stopMonitoring = () => {
-    if (monitoringIntervalRef.current) {
-      clearInterval(monitoringIntervalRef.current);
-      monitoringIntervalRef.current = null;
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
     }
   };
 
@@ -96,13 +95,10 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
       return;
     }
 
-    // Update campaign status immediately
+    // Update campaign status to 'running' using the new endpoint
     try {
       console.log(`[Injector] Updating campaign status to 'running' for campaign: ${campaign.id}`);
-      await backendClient.sessions.update(campaign.id, {
-        status: 'running',
-        start_time: new Date().toISOString(),
-      });
+      await backendClient.traffic.updateCampaignStatus(campaign.id, 'running');
       console.log(`[Injector] Successfully updated campaign status for: ${campaign.id}`);
     } catch (error) {
       console.error(`[Injector] Failed to update campaign status: ${error.message}`);
@@ -145,11 +141,12 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
     stopMonitoring();
     setIsInjecting(false);
     try {
-      console.log(`[Injector] Updating campaign status to 'stopped' for ${campaign.id}`);
-      await backendClient.sessions.update(campaign.id, {
-        status: 'stopped',
-        end_time: new Date().toISOString()
-      });
+      // Stop traffic generation first
+      await backendClient.traffic.stop(campaign.id);
+      
+      // Then update campaign status to 'stopped'
+      await backendClient.traffic.updateCampaignStatus(campaign.id, 'stopped');
+      
       console.log(`[Injector] Successfully stopped traffic generation for campaign ${campaign.id}`);
     } catch (error) {
       console.error(`[Injector] Error stopping traffic generation: ${error.message}`);
@@ -158,61 +155,122 @@ export default function DirectTrafficInjector({ campaign, onUpdate }) {
     onUpdate();
   };
 
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'running':
+        return 'bg-green-500/20 text-green-400 border-green-500/30';
+      case 'paused':
+        return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+      case 'completed':
+        return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+      case 'stopped':
+        return 'bg-red-500/20 text-red-400 border-red-500/30';
+      case 'draft':
+        return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
+      default:
+        return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
+    }
+  };
+
   return (
-    <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
+    <Card className="bg-gradient-to-r from-purple-900/20 to-pink-900/20 border-purple-800/50">
       <CardHeader>
-        <CardTitle className="text-lg font-semibold text-white flex items-center gap-2">
-          <Zap className="w-5 h-5 text-blue-400" />
-          Traffic Generation
+        <CardTitle className="flex items-center gap-2 text-purple-300">
+          <Zap className="w-5 h-5" />
+          Direct Traffic Injector
+          <Badge className="bg-purple-500/20 text-purple-400 border-purple-500/30">
+            Backend API
+          </Badge>
         </CardTitle>
       </CardHeader>
       <CardContent>
         {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-            <p className="text-red-400 text-sm">{error}</p>
-          </div>
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg"
+          >
+            <div className="flex items-center gap-2 text-red-400">
+              <AlertCircle className="w-4 h-4" />
+              <span className="text-sm">{error}</span>
+            </div>
+          </motion.div>
         )}
 
-        <div className="space-y-4">
-          {/* Monitoring Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-slate-800/50 p-3 rounded-lg">
-              <p className="text-slate-400 text-sm">Total Requests</p>
-              <p className="text-white text-xl font-semibold">{monitoringData.total_requests}</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+          <div className="text-center p-3 bg-slate-800/50 rounded-lg">
+            <div className="flex items-center justify-center gap-2 text-blue-400 mb-1">
+              <Activity className="w-4 h-4" />
+              <span className="text-xs">Total Requests</span>
             </div>
-            <div className="bg-slate-800/50 p-3 rounded-lg">
-              <p className="text-slate-400 text-sm">Success Rate</p>
-              <p className="text-white text-xl font-semibold">{monitoringData.success_rate.toFixed(1)}%</p>
+            <div className="text-lg font-semibold text-white">{stats.totalRequests}</div>
+          </div>
+          
+          <div className="text-center p-3 bg-slate-800/50 rounded-lg">
+            <div className="flex items-center justify-center gap-2 text-green-400 mb-1">
+              <TrendingUp className="w-4 h-4" />
+              <span className="text-xs">Successful</span>
             </div>
-            <div className="bg-slate-800/50 p-3 rounded-lg">
-              <p className="text-slate-400 text-sm">Requests/Min</p>
-              <p className="text-white text-xl font-semibold">{monitoringData.requests_per_minute.toFixed(1)}</p>
+            <div className="text-lg font-semibold text-white">{stats.successfulRequests}</div>
+          </div>
+          
+          <div className="text-center p-3 bg-slate-800/50 rounded-lg">
+            <div className="flex items-center justify-center gap-2 text-yellow-400 mb-1">
+              <Users className="w-4 h-4" />
+              <span className="text-xs">Success Rate</span>
             </div>
-            <div className="bg-slate-800/50 p-3 rounded-lg">
-              <p className="text-slate-400 text-sm">Avg Response</p>
-              <p className="text-white text-xl font-semibold">{monitoringData.average_response_time.toFixed(0)}ms</p>
+            <div className="text-lg font-semibold text-white">{stats.successRate.toFixed(1)}%</div>
+          </div>
+          
+          <div className="text-center p-3 bg-slate-800/50 rounded-lg">
+            <div className="flex items-center justify-center gap-2 text-purple-400 mb-1">
+              <Globe className="w-4 h-4" />
+              <span className="text-xs">Status</span>
+            </div>
+            <div className="text-sm font-semibold text-white">
+              {stats.isRunning ? 'Running' : 'Stopped'}
             </div>
           </div>
+        </div>
 
-          {/* Control Buttons */}
-          <div className="flex justify-end gap-2">
-            {!isInjecting ? (
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm text-slate-300">
+              Direct backend traffic injection with real-time monitoring
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              Live statistics • Status tracking • Backend integration
+            </p>
+          </div>
+          
+          <div className="flex gap-2">
+            {campaign.status === 'draft' || campaign.status === 'stopped' ? (
               <Button
                 onClick={startTrafficGeneration}
-                className="bg-green-600 hover:bg-green-700 text-white"
+                disabled={isInjecting}
+                className="bg-purple-600 hover:bg-purple-700 text-white"
               >
-                <Play className="w-4 h-4 mr-2" />
-                Start Generation
+                {isInjecting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4 mr-2" />
+                )}
+                {isInjecting ? 'Starting...' : 'Start Injection'}
               </Button>
-            ) : (
+            ) : campaign.status === 'running' ? (
               <Button
                 onClick={stopTrafficGeneration}
+                disabled={isInjecting}
                 variant="destructive"
               >
-                <Square className="w-4 h-4 mr-2" />
-                Stop Generation
+                {isInjecting ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Square className="w-4 h-4 mr-2" />
+                )}
+                {isInjecting ? 'Stopping...' : 'Stop Injection'}
               </Button>
-            )}
+            ) : null}
           </div>
         </div>
       </CardContent>

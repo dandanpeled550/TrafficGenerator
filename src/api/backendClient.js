@@ -138,6 +138,77 @@ const backendClient = {
         console.error('Error checking backend health:', error);
         throw error;
       }
+    },
+    // NEW: Campaign management endpoints
+    getCampaignInfo: async (campaignId) => {
+      try {
+        console.log('Getting campaign info:', campaignId);
+        const response = await fetch(`${API_BASE_URL}/api/traffic/campaigns/${campaignId}/info`, {
+          headers: defaultHeaders,
+          credentials: "include",
+        });
+        return await handleResponse(response);
+      } catch (error) {
+        console.error('Error getting campaign info:', error);
+        throw error;
+      }
+    },
+    updateCampaignStatus: async (campaignId, status) => {
+      try {
+        console.log('Updating campaign status:', campaignId, status);
+        const response = await fetch(`${API_BASE_URL}/api/traffic/campaigns/${campaignId}/status`, {
+          method: 'PUT',
+          headers: defaultHeaders,
+          credentials: "include",
+          body: JSON.stringify({ status }),
+        });
+        return await handleResponse(response);
+      } catch (error) {
+        console.error('Error updating campaign status:', error);
+        throw error;
+      }
+    },
+    cleanupCampaign: async (campaignId) => {
+      try {
+        console.log('Cleaning up campaign:', campaignId);
+        const response = await fetch(`${API_BASE_URL}/api/traffic/cleanup/${campaignId}`, {
+          method: 'POST',
+          headers: defaultHeaders,
+          credentials: "include",
+        });
+        return await handleResponse(response);
+      } catch (error) {
+        console.error('Error cleaning up campaign:', error);
+        throw error;
+      }
+    },
+    downloadTraffic: async (campaignId) => {
+      try {
+        console.log('Downloading traffic for campaign:', campaignId);
+        const response = await fetch(`${API_BASE_URL}/api/traffic/download/${campaignId}`, {
+          headers: defaultHeaders,
+          credentials: "include",
+        });
+        return await handleResponse(response);
+      } catch (error) {
+        console.error('Error downloading traffic:', error);
+        throw error;
+      }
+    },
+    testTrafficFunctions: async (testType, testData = {}) => {
+      try {
+        console.log('Testing traffic functions:', testType);
+        const response = await fetch(`${API_BASE_URL}/api/traffic/test`, {
+          method: 'POST',
+          headers: defaultHeaders,
+          credentials: "include",
+          body: JSON.stringify({ test_type: testType, ...testData }),
+        });
+        return await handleResponse(response);
+      } catch (error) {
+        console.error('Error testing traffic functions:', error);
+        throw error;
+      }
     }
   },
 
