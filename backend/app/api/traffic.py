@@ -1445,6 +1445,15 @@ def test_traffic_functions():
             response_times = [r.get('response_time', 0) for r in simulation_results if r.get('success')]
             win_prices = [r.get('win_price', 0) for r in simulation_results if r.get('success') and r.get('win_price')]
             
+            # Fix the set operations for lists
+            geo_locations = []
+            user_profiles = []
+            for r in simulation_results:
+                if r.get('geo_location'):
+                    geo_locations.extend(r.get('geo_location', []))
+                if r.get('user_profile'):
+                    user_profiles.extend(r.get('user_profile', []))
+            
             traffic_analysis = {
                 "total_requests": num_requests,
                 "successful_requests": successful_requests,
@@ -1455,8 +1464,8 @@ def test_traffic_functions():
                 "average_win_price": round(sum(win_prices) / len(win_prices), 2) if win_prices else 0,
                 "min_win_price": min(win_prices) if win_prices else 0,
                 "max_win_price": max(win_prices) if win_prices else 0,
-                "unique_geo_locations": len(set(r.get('geo_location', []) for r in simulation_results)),
-                "unique_user_profiles": len(set(r.get('user_profile', []) for r in simulation_results))
+                "unique_geo_locations": len(set(geo_locations)),
+                "unique_user_profiles": len(set(user_profiles))
             }
             
             # Performance metrics
