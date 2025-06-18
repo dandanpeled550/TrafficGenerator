@@ -1340,6 +1340,154 @@ def test_traffic_functions():
                 "timestamp": datetime.utcnow().isoformat()
             })
 
+        elif test_type == "full_traffic_simulation":
+            # Test complete traffic generation and simulation flow
+            logger.info("[Test] Testing full traffic simulation flow")
+            
+            # Get configuration from request or use defaults
+            config_data = data.get('config', {
+                'campaign_id': 'full_simulation_test',
+                'target_url': 'https://example.com',
+                'requests_per_minute': 10,
+                'duration_minutes': 1,
+                'user_profile_ids': ['profile1', 'profile2'],
+                'profile_user_counts': {'profile1': 50, 'profile2': 30},
+                'total_profile_users': 80,
+                'geo_locations': ['United States', 'Canada'],
+                'rtb_config': {
+                    'device_brand': 'mixed',
+                    'device_models': ['Galaxy S24', 'iPhone 15', 'Pixel 8'],
+                    'ad_formats': ['banner', 'interstitial', 'native'],
+                    'app_categories': ['IAB9', 'IAB1', 'IAB2'],
+                    'generate_adid': True
+                },
+                'config': {
+                    'randomize_timing': True,
+                    'enable_logging': True
+                }
+            })
+            
+            # Create traffic config
+            test_config = TrafficConfig(**config_data)
+            logger.info(f"[Test] Created traffic config: {test_config.campaign_id}")
+            
+            # Generate multiple traffic data entries
+            num_requests = data.get('num_requests', 5)
+            traffic_entries = []
+            simulation_results = []
+            total_generation_time = 0
+            total_simulation_time = 0
+            successful_requests = 0
+            
+            logger.info(f"[Test] Generating {num_requests} traffic entries and simulating requests")
+            
+            for i in range(num_requests):
+                try:
+                    # Step 1: Generate traffic data
+                    gen_start_time = time.time()
+                    traffic_data = generate_traffic_data(test_config)
+                    gen_end_time = time.time()
+                    generation_time = gen_end_time - gen_start_time
+                    total_generation_time += generation_time
+                    
+                    # Step 2: Simulate request
+                    sim_start_time = time.time()
+                    response_data = simulate_request(traffic_data)
+                    sim_end_time = time.time()
+                    simulation_time = sim_end_time - sim_start_time
+                    total_simulation_time += simulation_time
+                    
+                    if response_data.get('success'):
+                        successful_requests += 1
+                    
+                    # Store traffic entry
+                    traffic_entries.append({
+                        "request_number": i + 1,
+                        "traffic_data": traffic_data,
+                        "generation_time": round(generation_time, 3)
+                    })
+                    
+                    # Store simulation result
+                    simulation_results.append({
+                        "request_number": i + 1,
+                        "success": response_data.get('success', False),
+                        "status_code": response_data.get('status_code'),
+                        "response_time": response_data.get('response_time'),
+                        "response_size": response_data.get('response_size'),
+                        "bid_id": response_data.get('bid_id'),
+                        "win_price": response_data.get('win_price'),
+                        "currency": response_data.get('currency'),
+                        "simulation_time": round(simulation_time, 3),
+                        "total_time": round(generation_time + simulation_time, 3),
+                        "timestamp": response_data.get('timestamp'),
+                        "user_profile": traffic_data.get('user_profile_ids', []),
+                        "geo_location": traffic_data.get('geo_locations', []),
+                        "device_info": response_data.get('rtb_data', {})
+                    })
+                    
+                    logger.debug(f"[Test] Request {i + 1} completed: {response_data.get('success')}")
+                    
+                except Exception as e:
+                    logger.error(f"[Test] Error in request {i + 1}: {str(e)}")
+                    simulation_results.append({
+                        "request_number": i + 1,
+                        "error": str(e),
+                        "success": False
+                    })
+            
+            # Calculate comprehensive statistics
+            success_rate = (successful_requests / num_requests) * 100 if num_requests > 0 else 0
+            avg_generation_time = total_generation_time / num_requests if num_requests > 0 else 0
+            avg_simulation_time = total_simulation_time / num_requests if num_requests > 0 else 0
+            avg_total_time = (total_generation_time + total_simulation_time) / num_requests if num_requests > 0 else 0
+            
+            # Analyze traffic patterns
+            response_times = [r.get('response_time', 0) for r in simulation_results if r.get('success')]
+            win_prices = [r.get('win_price', 0) for r in simulation_results if r.get('success') and r.get('win_price')]
+            
+            traffic_analysis = {
+                "total_requests": num_requests,
+                "successful_requests": successful_requests,
+                "success_rate": round(success_rate, 2),
+                "average_response_time": round(sum(response_times) / len(response_times), 2) if response_times else 0,
+                "min_response_time": min(response_times) if response_times else 0,
+                "max_response_time": max(response_times) if response_times else 0,
+                "average_win_price": round(sum(win_prices) / len(win_prices), 2) if win_prices else 0,
+                "min_win_price": min(win_prices) if win_prices else 0,
+                "max_win_price": max(win_prices) if win_prices else 0,
+                "unique_geo_locations": len(set(r.get('geo_location', []) for r in simulation_results)),
+                "unique_user_profiles": len(set(r.get('user_profile', []) for r in simulation_results))
+            }
+            
+            # Performance metrics
+            performance_metrics = {
+                "total_generation_time": round(total_generation_time, 3),
+                "total_simulation_time": round(total_simulation_time, 3),
+                "total_processing_time": round(total_generation_time + total_simulation_time, 3),
+                "average_generation_time": round(avg_generation_time, 3),
+                "average_simulation_time": round(avg_simulation_time, 3),
+                "average_total_time": round(avg_total_time, 3),
+                "requests_per_second": round(num_requests / (total_generation_time + total_simulation_time), 2) if (total_generation_time + total_simulation_time) > 0 else 0
+            }
+            
+            return jsonify({
+                "success": True,
+                "test_type": test_type,
+                "config": test_config.to_dict(),
+                "traffic_entries": traffic_entries,
+                "simulation_results": simulation_results,
+                "traffic_analysis": traffic_analysis,
+                "performance_metrics": performance_metrics,
+                "summary": {
+                    "campaign_id": test_config.campaign_id,
+                    "total_requests_processed": num_requests,
+                    "success_rate_percentage": round(success_rate, 2),
+                    "total_processing_time_seconds": round(total_generation_time + total_simulation_time, 3),
+                    "requests_per_second": round(num_requests / (total_generation_time + total_simulation_time), 2) if (total_generation_time + total_simulation_time) > 0 else 0
+                },
+                "timestamp": datetime.utcnow().isoformat()
+            })
+
         else:
             return jsonify({
                 "success": False,
