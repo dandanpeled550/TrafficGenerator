@@ -176,6 +176,7 @@ def generate_traffic_background(config: TrafficConfig):
     try:
         logger.info(f"[Traffic Generation] Starting background traffic generation for campaign {config.campaign_id}")
         logger.info(f"[Traffic Generation] Thread ID: {thread_id}")
+        logger.info(f"[Traffic Generation] Config: {json.dumps(config.to_dict(), indent=2)}")
         
         # Create campaign-specific directory and file with proper error handling
         campaign_dir = os.path.join(TRAFFIC_DATA_DIR, config.campaign_id)
@@ -186,6 +187,7 @@ def generate_traffic_background(config: TrafficConfig):
             if not os.path.exists(campaign_file):
                 with open(campaign_file, 'w') as f:
                     json.dump([], f)
+            logger.info(f"[Traffic Generation] Campaign directory and file setup completed: {campaign_file}")
         except Exception as e:
             logger.error(f"[Traffic Generation] Error setting up campaign directory: {str(e)}", exc_info=True)
             update_campaign_status(config.campaign_id, "error", {"error": f"Directory setup failed: {str(e)}"})
@@ -194,9 +196,11 @@ def generate_traffic_background(config: TrafficConfig):
         # Calculate total requests with validation
         total_requests = config.requests_per_minute * (config.duration_minutes or 60)
         if total_requests <= 0:
-            logger.error("[Traffic Generation] Invalid request count")
-            update_campaign_status(config.campaign_id, "error", {"error": "Invalid request count"})
+            logger.error(f"[Traffic Generation] Invalid request count: {total_requests}")
+            update_campaign_status(config.campaign_id, "error", {"error": f"Invalid request count: {total_requests}"})
             return
+
+        logger.info(f"[Traffic Generation] Total requests to generate: {total_requests}")
 
         # Initialize counters and timestamps
         request_count = 0
@@ -206,11 +210,14 @@ def generate_traffic_background(config: TrafficConfig):
         end_time = start_time + timedelta(minutes=config.duration_minutes) if config.duration_minutes else None
         config.end_time = end_time
 
+        logger.info(f"[Traffic Generation] Start time: {start_time}, End time: {end_time}")
+
         # Update campaign status to running
         update_campaign_status(config.campaign_id, "running", {
             "start_time": start_time.isoformat(),
             "total_requests": total_requests,
-            "thread_id": thread_id
+            "thread_id": thread_id,
+            "traffic_generation_active": True
         })
 
         # Main traffic generation loop with improved error handling
@@ -218,7 +225,7 @@ def generate_traffic_background(config: TrafficConfig):
             try:
                 # Check if thread was stopped
                 if active_threads.get(config.campaign_id) != thread_id:
-                    logger.info(f"[Traffic Generation] Traffic generation stopped for campaign {config.campaign_id}")
+                    logger.info(f"[Traffic Generation] Traffic generation stopped for campaign {config.campaign_id} (thread ID mismatch)")
                     break
 
                 # Check if we should stop
@@ -232,6 +239,7 @@ def generate_traffic_background(config: TrafficConfig):
                     if not traffic_data:
                         logger.error("[Traffic Generation] Failed to generate traffic data")
                         continue
+                    logger.debug(f"[Traffic Generation] Generated traffic data for request {request_count + 1}")
                 except Exception as e:
                     logger.error(f"[Traffic Generation] Error generating traffic data: {str(e)}", exc_info=True)
                     continue
@@ -242,6 +250,7 @@ def generate_traffic_background(config: TrafficConfig):
                     if not response_data:
                         logger.error("[Traffic Generation] Failed to simulate request")
                         continue
+                    logger.debug(f"[Traffic Generation] Simulated request {request_count + 1}: success={response_data.get('success')}")
                 except Exception as e:
                     logger.error(f"[Traffic Generation] Error simulating request: {str(e)}", exc_info=True)
                     continue
@@ -252,6 +261,7 @@ def generate_traffic_background(config: TrafficConfig):
                         request_count += 1
                         if response_data.get('success'):
                             successful_requests += 1
+                        logger.info(f"[Traffic Generation] Request {request_count} saved successfully (success: {response_data.get('success')})")
                     else:
                         logger.error(f"[Traffic Generation] Failed to save request {request_count + 1}")
                 except Exception as e:
@@ -264,13 +274,16 @@ def generate_traffic_background(config: TrafficConfig):
                     "progress_percentage": progress,
                     "total_requests": request_count,
                     "successful_requests": successful_requests,
-                    "last_updated": datetime.utcnow().isoformat()
+                    "last_updated": datetime.utcnow().isoformat(),
+                    "traffic_generation_active": True
                 })
 
                 # Calculate sleep time with validation
                 sleep_time = max(0.1, 60 / config.requests_per_minute)
                 if config.config.get('randomize_timing', True):
                     sleep_time *= random.uniform(0.8, 1.2)
+                
+                logger.debug(f"[Traffic Generation] Sleeping for {sleep_time:.3f} seconds before next request")
                 time.sleep(sleep_time)
 
             except Exception as e:
@@ -285,26 +298,33 @@ def generate_traffic_background(config: TrafficConfig):
 
         # Update final status with validation
         final_status = "completed" if request_count > 0 else "error"
+        logger.info(f"[Traffic Generation] Campaign {config.campaign_id} completed with status: {final_status}")
+        logger.info(f"[Traffic Generation] Final stats: {request_count} total requests, {successful_requests} successful")
+        
         update_campaign_status(config.campaign_id, final_status, {
             "end_time": datetime.utcnow().isoformat(),
             "total_requests": request_count,
             "successful_requests": successful_requests,
-            "last_updated": datetime.utcnow().isoformat()
+            "last_updated": datetime.utcnow().isoformat(),
+            "traffic_generation_active": False
         })
 
     except Exception as e:
         logger.error(f"[Traffic Generation] Error in background traffic generation: {str(e)}", exc_info=True)
         update_campaign_status(config.campaign_id, "error", {
             "error": str(e),
-            "last_updated": datetime.utcnow().isoformat()
+            "last_updated": datetime.utcnow().isoformat(),
+            "traffic_generation_active": False
         })
     finally:
         # Clean up resources with proper error handling
         try:
             if active_threads.get(config.campaign_id) == thread_id:
                 del active_threads[config.campaign_id]
+                logger.info(f"[Traffic Generation] Removed campaign {config.campaign_id} from active threads")
             if config.campaign_id in thread_locks:
                 del thread_locks[config.campaign_id]
+                logger.info(f"[Traffic Generation] Removed thread lock for campaign {config.campaign_id}")
         except Exception as e:
             logger.error(f"[Traffic Generation] Error cleaning up resources: {str(e)}", exc_info=True)
 
@@ -334,7 +354,8 @@ def generate_traffic():
             logger.warning(f"[API] {error_msg}")
             return jsonify({
                 "error": error_msg,
-                "status": "running"
+                "status": "running",
+                "campaign_id": campaign_id
             }), 409
 
         try:
@@ -346,6 +367,18 @@ def generate_traffic():
 
             campaign_data = sessions[campaign_id].to_dict()
             logger.info(f"[API] Retrieved campaign data: {json.dumps(campaign_data, indent=2)}")
+
+            # Check campaign status - campaigns must be in 'running' status to start traffic generation
+            campaign_status = campaign_data.get('status', 'draft')
+            if campaign_status != 'running':
+                error_msg = f"Campaign must be in 'running' status to start traffic generation. Current status: {campaign_status}"
+                logger.error(f"[API] {error_msg}")
+                return jsonify({
+                    "error": error_msg,
+                    "current_status": campaign_status,
+                    "required_status": "running",
+                    "campaign_id": campaign_id
+                }), 400
 
             # Validate campaign data
             if not campaign_data.get('target_url'):
@@ -370,12 +403,26 @@ def generate_traffic():
                 logger.error(f"[API] {error_msg}")
                 return jsonify({"error": error_msg}), 400
 
+            # Validate requests_per_minute
+            requests_per_minute = campaign_data.get('requests_per_minute', 10)
+            if requests_per_minute <= 0:
+                error_msg = "Requests per minute must be greater than 0"
+                logger.error(f"[API] {error_msg}")
+                return jsonify({"error": error_msg}), 400
+
+            # Validate duration_minutes
+            duration_minutes = campaign_data.get('duration_minutes')
+            if duration_minutes is not None and duration_minutes <= 0:
+                error_msg = "Duration minutes must be greater than 0"
+                logger.error(f"[API] {error_msg}")
+                return jsonify({"error": error_msg}), 400
+
             # Create traffic config from campaign data
             config_data = {
                 'campaign_id': campaign_id,
                 'target_url': campaign_data['target_url'],
-                'requests_per_minute': campaign_data.get('requests_per_minute', 10),
-                'duration_minutes': campaign_data.get('duration_minutes'),
+                'requests_per_minute': requests_per_minute,
+                'duration_minutes': duration_minutes,
                 'user_profile_ids': campaign_data['user_profile_ids'],
                 'profile_user_counts': profile_user_counts,
                 'total_profile_users': total_users,
@@ -409,27 +456,40 @@ def generate_traffic():
             active_threads[campaign_id] = thread_id
             logger.info(f"[API] Stored thread ID {thread_id} for campaign {campaign_id}")
 
-            # Update campaign status
-            logger.info(f"[API] Updating campaign status to running")
-            update_campaign_status(campaign_id, "running")
+            # Update campaign status to indicate traffic generation is active
+            logger.info(f"[API] Updating campaign status to indicate traffic generation is active")
+            update_campaign_status(campaign_id, "running", {
+                "traffic_generation_started": True,
+                "thread_id": thread_id,
+                "start_time": datetime.utcnow().isoformat()
+            })
 
             logger.info(f"[API] Successfully started traffic generation for campaign {campaign_id}")
             return jsonify({
                 "success": True,
-                "message": "Traffic generation started",
+                "message": "Traffic generation started successfully",
                 "campaign_id": campaign_id,
                 "status": "running",
-                "thread_id": thread_id
+                "thread_id": thread_id,
+                "config": {
+                    "requests_per_minute": requests_per_minute,
+                    "duration_minutes": duration_minutes,
+                    "total_users": total_users,
+                    "profiles": len(campaign_data['user_profile_ids'])
+                }
             })
         except Exception as e:
             error_msg = f"Error starting traffic generation thread: {str(e)}"
-            logger.error(f"[API] {error_msg}")
+            logger.error(f"[API] {error_msg}", exc_info=True)
             # Clean up resources if thread creation fails
             if campaign_id in active_threads:
                 del active_threads[campaign_id]
             if campaign_id in thread_locks:
                 del thread_locks[campaign_id]
-            return jsonify({"error": error_msg}), 500
+            return jsonify({
+                "error": error_msg,
+                "campaign_id": campaign_id
+            }), 500
 
     except Exception as e:
         error_msg = f"Unexpected error in traffic generation: {str(e)}"
@@ -1508,4 +1568,164 @@ def test_traffic_functions():
         return jsonify({
             "success": False,
             "error": f"Error in test endpoint: {str(e)}"
-        }), 500 
+        }), 500
+
+@bp.route("/campaigns/<campaign_id>/status", methods=['PUT'])
+def update_campaign_status_endpoint(campaign_id: str):
+    """Update campaign status and manage transitions"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No data provided"}), 400
+
+        new_status = data.get('status')
+        if not new_status:
+            return jsonify({"error": "Status is required"}), 400
+
+        # Validate status
+        valid_statuses = ["draft", "running", "paused", "completed", "stopped", "error"]
+        if new_status not in valid_statuses:
+            return jsonify({
+                "error": f"Invalid status. Must be one of: {valid_statuses}",
+                "provided_status": new_status
+            }), 400
+
+        # Check if campaign exists
+        if campaign_id not in sessions:
+            return jsonify({"error": f"Campaign {campaign_id} not found"}), 404
+
+        campaign_data = sessions[campaign_id].to_dict()
+        current_status = campaign_data.get('status', 'draft')
+
+        logger.info(f"[API] Updating campaign {campaign_id} status from {current_status} to {new_status}")
+
+        # Handle status transitions
+        if new_status == 'running':
+            # If starting traffic generation, check if it's already running
+            if campaign_id in active_threads:
+                return jsonify({
+                    "error": "Traffic generation is already running for this campaign",
+                    "campaign_id": campaign_id,
+                    "current_status": current_status
+                }), 409
+
+        elif new_status == 'stopped':
+            # If stopping, also stop traffic generation
+            if campaign_id in active_threads:
+                logger.info(f"[API] Stopping traffic generation for campaign {campaign_id}")
+                cleanup_campaign_resources(campaign_id)
+
+        # Update the campaign status
+        try:
+            update_data = {
+                'status': new_status,
+                'updated_at': datetime.utcnow().isoformat()
+            }
+
+            # Add start_time if transitioning to running
+            if new_status == 'running':
+                update_data['start_time'] = datetime.utcnow().isoformat()
+
+            # Add end_time if transitioning to stopped/completed
+            if new_status in ['stopped', 'completed']:
+                update_data['end_time'] = datetime.utcnow().isoformat()
+
+            # Update session
+            sessions[campaign_id].update(update_data)
+
+            logger.info(f"[API] Successfully updated campaign {campaign_id} status to {new_status}")
+
+            return jsonify({
+                "success": True,
+                "message": f"Campaign status updated to {new_status}",
+                "campaign_id": campaign_id,
+                "previous_status": current_status,
+                "new_status": new_status,
+                "updated_at": update_data['updated_at']
+            })
+
+        except Exception as e:
+            logger.error(f"[API] Error updating campaign status: {str(e)}", exc_info=True)
+            return jsonify({
+                "error": f"Failed to update campaign status: {str(e)}",
+                "campaign_id": campaign_id
+            }), 500
+
+    except Exception as e:
+        logger.error(f"[API] Unexpected error in campaign status update: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+
+@bp.route("/campaigns/<campaign_id>/info", methods=['GET'])
+def get_campaign_info(campaign_id: str):
+    """Get comprehensive campaign information including status and traffic generation state"""
+    try:
+        # Check if campaign exists
+        if campaign_id not in sessions:
+            return jsonify({"error": f"Campaign {campaign_id} not found"}), 404
+
+        campaign_data = sessions[campaign_id].to_dict()
+        
+        # Get traffic generation status
+        is_traffic_running = campaign_id in active_threads
+        thread_id = active_threads.get(campaign_id) if is_traffic_running else None
+        
+        # Get traffic data if exists
+        campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
+        traffic_stats = {
+            "has_traffic_data": os.path.exists(campaign_file),
+            "total_requests": 0,
+            "successful_requests": 0,
+            "success_rate": 0.0
+        }
+        
+        if os.path.exists(campaign_file):
+            try:
+                with open(campaign_file, 'r') as f:
+                    traffic_data = json.load(f)
+                    traffic_stats.update({
+                        "total_requests": len(traffic_data),
+                        "successful_requests": sum(1 for entry in traffic_data if entry.get('success', False)),
+                        "last_request_time": traffic_data[-1].get('timestamp') if traffic_data else None
+                    })
+                    if traffic_stats["total_requests"] > 0:
+                        traffic_stats["success_rate"] = (traffic_stats["successful_requests"] / traffic_stats["total_requests"]) * 100
+            except Exception as e:
+                logger.error(f"[API] Error reading traffic data: {str(e)}")
+
+        # Compile comprehensive info
+        campaign_info = {
+            "campaign_id": campaign_id,
+            "basic_info": {
+                "name": campaign_data.get('name'),
+                "target_url": campaign_data.get('target_url'),
+                "status": campaign_data.get('status'),
+                "created_at": campaign_data.get('created_at'),
+                "updated_at": campaign_data.get('updated_at'),
+                "start_time": campaign_data.get('start_time'),
+                "end_time": campaign_data.get('end_time')
+            },
+            "traffic_generation": {
+                "is_running": is_traffic_running,
+                "thread_id": thread_id,
+                "requests_per_minute": campaign_data.get('requests_per_minute'),
+                "duration_minutes": campaign_data.get('duration_minutes'),
+                "user_profile_ids": campaign_data.get('user_profile_ids'),
+                "profile_user_counts": campaign_data.get('profile_user_counts'),
+                "total_profile_users": sum(campaign_data.get('profile_user_counts', {}).values())
+            },
+            "traffic_stats": traffic_stats,
+            "configuration": {
+                "geo_locations": campaign_data.get('geo_locations'),
+                "rtb_config": campaign_data.get('rtb_config'),
+                "config": campaign_data.get('config')
+            }
+        }
+
+        return jsonify({
+            "success": True,
+            "data": campaign_info
+        })
+
+    except Exception as e:
+        logger.error(f"[API] Error getting campaign info: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Error getting campaign info: {str(e)}"}), 500 
