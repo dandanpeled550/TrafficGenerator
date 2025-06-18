@@ -79,10 +79,12 @@ const CampaignCard = ({ campaign, onDelete, onStatusChange, allProfiles }) => {
 
   const stopTrafficGeneration = async () => {
     try {
-      await backendClient.sessions.update(campaign.id, {
-        status: 'stopped',
-        end_time: new Date().toISOString()
-      });
+      // Stop traffic generation first
+      await backendClient.traffic.stop(campaign.id);
+      
+      // Then update campaign status to 'stopped'
+      await backendClient.traffic.updateCampaignStatus(campaign.id, 'stopped');
+      
       onStatusChange(campaign.id, 'stopped');
     } catch (error) {
       console.error(`[Injector] Error stopping traffic generation:`, error);
