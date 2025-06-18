@@ -1617,21 +1617,19 @@ def update_campaign_status_endpoint(campaign_id: str):
 
         # Update the campaign status
         try:
-            update_data = {
-                'status': new_status,
-                'updated_at': datetime.utcnow().isoformat()
-            }
+            session = sessions[campaign_id]
+            
+            # Update status
+            session.status = new_status
+            session.updated_at = datetime.utcnow()
 
             # Add start_time if transitioning to running
             if new_status == 'running':
-                update_data['start_time'] = datetime.utcnow().isoformat()
+                session.start_time = datetime.utcnow()
 
             # Add end_time if transitioning to stopped/completed
             if new_status in ['stopped', 'completed']:
-                update_data['end_time'] = datetime.utcnow().isoformat()
-
-            # Update session
-            sessions[campaign_id].update(update_data)
+                session.end_time = datetime.utcnow()
 
             logger.info(f"[API] Successfully updated campaign {campaign_id} status to {new_status}")
 
@@ -1641,7 +1639,7 @@ def update_campaign_status_endpoint(campaign_id: str):
                 "campaign_id": campaign_id,
                 "previous_status": current_status,
                 "new_status": new_status,
-                "updated_at": update_data['updated_at']
+                "updated_at": session.updated_at.isoformat()
             })
 
         except Exception as e:
