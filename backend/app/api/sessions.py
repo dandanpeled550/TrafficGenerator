@@ -162,9 +162,31 @@ def create_session():
 
 @bp.route("/", methods=['GET'])
 def list_sessions():
-    """List all traffic sessions"""
+    """List all traffic sessions, updating total_requests and successful_requests from traffic files"""
+    import os
+    import json
+    from app.api.traffic import TRAFFIC_DATA_DIR
     try:
-        return jsonify([session.to_dict() for session in sessions.values()])
+        session_dicts = []
+        for session in sessions.values():
+            # Try to update total_requests and successful_requests from traffic file
+            campaign_id = session.id
+            campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
+            if os.path.exists(campaign_file):
+                try:
+                    with open(campaign_file, 'r') as f:
+                        traffic_data = json.load(f)
+                    session.total_requests = len(traffic_data)
+                    session.successful_requests = sum(1 for entry in traffic_data if entry.get('success', False))
+                except Exception as e:
+                    logger.warning(f"Could not read traffic file for session {campaign_id}: {e}")
+                    session.total_requests = 0
+                    session.successful_requests = 0
+            else:
+                session.total_requests = 0
+                session.successful_requests = 0
+            session_dicts.append(session.to_dict())
+        return jsonify(session_dicts)
     except Exception as e:
         logger.error(f"Error listing sessions: {str(e)}")
         return jsonify({"error": str(e)}), 500
