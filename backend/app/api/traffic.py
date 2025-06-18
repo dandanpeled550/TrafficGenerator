@@ -1220,6 +1220,126 @@ def test_traffic_functions():
                 "timestamp": datetime.utcnow().isoformat()
             })
 
+        elif test_type == "simulate_request":
+            # Test simulate_request function
+            logger.info("[Test] Testing simulate_request function")
+            
+            # Get test data from request or use default
+            test_traffic_data = data.get('traffic_data', {
+                "id": str(int(time.time() * 1000)),
+                "timestamp": datetime.utcnow().isoformat(),
+                "campaign_id": "test_simulate_campaign",
+                "target_url": "https://example.com",
+                "requests_per_minute": 10,
+                "duration_minutes": 1,
+                "geo_locations": ["United States"],
+                "rtb_config": {
+                    "device_brand": "samsung",
+                    "device_models": ["Galaxy S24"],
+                    "ad_formats": ["banner"],
+                    "app_categories": ["IAB9"]
+                },
+                "config": {
+                    "randomize_timing": True,
+                    "enable_logging": True
+                },
+                "user_profile_ids": ["profile1"],
+                "profile_user_counts": {"profile1": 100},
+                "total_profile_users": 100,
+                "rtb_data": {
+                    "device_brand": "samsung",
+                    "device_model": "Galaxy S24",
+                    "ad_format": "banner",
+                    "app_category": "IAB9",
+                    "adid": generate_adid()
+                }
+            })
+            
+            # Test multiple simulations
+            num_simulations = data.get('num_simulations', 5)
+            simulation_results = []
+            success_count = 0
+            total_response_time = 0
+            
+            logger.info(f"[Test] Running {num_simulations} simulations")
+            
+            for i in range(num_simulations):
+                try:
+                    start_time = time.time()
+                    response_data = simulate_request(test_traffic_data.copy())
+                    end_time = time.time()
+                    
+                    simulation_time = end_time - start_time
+                    total_response_time += simulation_time
+                    
+                    if response_data.get('success'):
+                        success_count += 1
+                    
+                    simulation_results.append({
+                        "simulation_number": i + 1,
+                        "success": response_data.get('success', False),
+                        "status_code": response_data.get('status_code'),
+                        "response_time": response_data.get('response_time'),
+                        "response_size": response_data.get('response_size'),
+                        "bid_id": response_data.get('bid_id'),
+                        "win_price": response_data.get('win_price'),
+                        "currency": response_data.get('currency'),
+                        "simulation_duration": round(simulation_time, 3),
+                        "timestamp": response_data.get('timestamp')
+                    })
+                    
+                    logger.debug(f"[Test] Simulation {i + 1} completed: {response_data.get('success')}")
+                    
+                except Exception as e:
+                    logger.error(f"[Test] Error in simulation {i + 1}: {str(e)}")
+                    simulation_results.append({
+                        "simulation_number": i + 1,
+                        "error": str(e),
+                        "success": False
+                    })
+            
+            # Calculate statistics
+            success_rate = (success_count / num_simulations) * 100 if num_simulations > 0 else 0
+            avg_simulation_time = total_response_time / num_simulations if num_simulations > 0 else 0
+            
+            # Verify response data structure
+            verification_results = {
+                "response_fields": {
+                    "success": all("success" in result for result in simulation_results if "error" not in result),
+                    "status_code": all("status_code" in result for result in simulation_results if "error" not in result),
+                    "response_time": all("response_time" in result for result in simulation_results if "error" not in result),
+                    "response_size": all("response_size" in result for result in simulation_results if "error" not in result),
+                    "timestamp": all("timestamp" in result for result in simulation_results if "error" not in result)
+                },
+                "rtb_fields": {
+                    "bid_id": all("bid_id" in result for result in simulation_results if "error" not in result and result.get("success")),
+                    "win_price": all("win_price" in result for result in simulation_results if "error" not in result and result.get("success")),
+                    "currency": all("currency" in result for result in simulation_results if "error" not in result and result.get("success"))
+                }
+            }
+            
+            # Check if all required fields are present
+            all_fields_valid = all(verification_results["response_fields"].values())
+            rtb_fields_valid = all(verification_results["rtb_fields"].values())
+            
+            return jsonify({
+                "success": True,
+                "test_type": test_type,
+                "input_data": test_traffic_data,
+                "simulation_results": simulation_results,
+                "statistics": {
+                    "total_simulations": num_simulations,
+                    "successful_simulations": success_count,
+                    "success_rate": round(success_rate, 2),
+                    "average_simulation_time": round(avg_simulation_time, 3),
+                    "total_simulation_time": round(total_response_time, 3)
+                },
+                "verification": verification_results,
+                "all_fields_valid": all_fields_valid,
+                "rtb_fields_valid": rtb_fields_valid,
+                "timestamp": datetime.utcnow().isoformat()
+            })
+
         else:
             return jsonify({
                 "success": False,
