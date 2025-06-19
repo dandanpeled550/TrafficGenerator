@@ -33,11 +33,16 @@ console_handler.setFormatter(formatter)
 logger.addHandler(handler)
 logger.addHandler(console_handler)
 
+# Set up a known logs directory for campaign events
+LOGS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'logs')
+os.makedirs(LOGS_DIR, exist_ok=True)
+CAMPAIGN_EVENTS_LOG_PATH = os.path.join(LOGS_DIR, 'campaign_events.log')
+
 # Set up a custom logger for campaign/session events
 campaign_logger = logging.getLogger("campaign_logger")
 campaign_logger.setLevel(logging.INFO)
 if not campaign_logger.handlers:
-    handler = logging.FileHandler("campaign_events.log")
+    handler = logging.FileHandler(CAMPAIGN_EVENTS_LOG_PATH)
     formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
     handler.setFormatter(formatter)
     campaign_logger.addHandler(handler)
@@ -1756,7 +1761,6 @@ def get_campaign_info(campaign_id: str):
 
 @bp.route('/events-log', methods=['GET'])
 def download_events_log():
-    log_path = os.path.join(os.getcwd(), 'campaign_events.log')
-    if not os.path.exists(log_path):
+    if not os.path.exists(CAMPAIGN_EVENTS_LOG_PATH):
         return abort(404, description='campaign_events.log not found')
-    return send_file(log_path, as_attachment=True) 
+    return send_file(CAMPAIGN_EVENTS_LOG_PATH, as_attachment=True) 
