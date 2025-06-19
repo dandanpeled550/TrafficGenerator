@@ -110,6 +110,11 @@ def create_session():
             if field not in data:
                 return jsonify({"error": f"Missing required field: {field}"}), 400
 
+        # Validate target_url format
+        target_url = data['target_url']
+        if not (isinstance(target_url, str) and (target_url.startswith('http://') or target_url.startswith('https://'))):
+            return jsonify({"error": "Invalid target_url: must start with http:// or https://"}), 400
+
         session_id = f"session_{len(sessions) + 1}"
         
         # Ensure rtb_config has all required fields
@@ -213,6 +218,12 @@ def update_session(session_id: str):
         if not data:
             return jsonify({"error": "No data provided"}), 400
             
+        # Validate target_url format if updating
+        if 'target_url' in data:
+            target_url = data['target_url']
+            if not (isinstance(target_url, str) and (target_url.startswith('http://') or target_url.startswith('https://'))):
+                return jsonify({"error": "Invalid target_url: must start with http:// or https://"}), 400
+
         session = sessions[session_id]
         
         # Handle rtb_config update
@@ -264,10 +275,9 @@ def delete_session(session_id: str):
     try:
         if session_id not in sessions:
             return jsonify({"error": "Session not found"}), 404
-            
         del sessions[session_id]
         logger.info(f"Deleted session {session_id}")
-        return jsonify({"message": "Session deleted successfully"})
+        return jsonify({"success": True, "message": f"Session {session_id} deleted"})
     except Exception as e:
         logger.error(f"Error deleting session {session_id}: {str(e)}")
         return jsonify({"error": str(e)}), 500 

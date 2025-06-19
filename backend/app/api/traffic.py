@@ -56,6 +56,14 @@ except Exception as e:
 active_threads = {}
 thread_locks = {}
 
+def append_campaign_log(campaign_id, message):
+    """Append a detailed log message to the campaign's log file."""
+    campaign_dir = os.path.join(TRAFFIC_DATA_DIR, campaign_id)
+    os.makedirs(campaign_dir, exist_ok=True)
+    log_file = os.path.join(campaign_dir, 'logs.txt')
+    with open(log_file, 'a') as f:
+        f.write(message + '\n')
+
 def append_traffic_to_file(campaign_id: str, traffic_data: Dict[str, Any]):
     """Append traffic data to campaign-specific file with improved error handling"""
     max_retries = 3
@@ -174,7 +182,8 @@ def generate_traffic_background(config: TrafficConfig):
     active_threads[config.campaign_id] = thread_id
     
     try:
-        logger.info(f"[Traffic Generation] Starting background traffic generation for campaign {config.campaign_id}")
+        logger.info(f"[Session {config.campaign_id}] Traffic generation started.")
+        append_campaign_log(config.campaign_id, f"START: Traffic generation started for campaign {config.campaign_id} at {datetime.utcnow().isoformat()}")
         logger.info(f"[Traffic Generation] Thread ID: {thread_id}")
         logger.info(f"[Traffic Generation] Config: {json.dumps(config.to_dict(), indent=2)}")
         
@@ -261,11 +270,14 @@ def generate_traffic_background(config: TrafficConfig):
                         request_count += 1
                         if response_data.get('success'):
                             successful_requests += 1
-                        logger.info(f"[Traffic Generation] Request {request_count} saved successfully (success: {response_data.get('success')})")
+                        logger.info(f"[Session {config.campaign_id}] Request {request_count} {'SUCCESS' if response_data.get('success') else 'FAIL'}.")
+                        append_campaign_log(config.campaign_id, f"REQUEST {request_count}: {response_data}")
                     else:
-                        logger.error(f"[Traffic Generation] Failed to save request {request_count + 1}")
+                        logger.error(f"[Session {config.campaign_id}] Failed to save request {request_count + 1}.")
+                        append_campaign_log(config.campaign_id, f"ERROR: Failed to save request {request_count + 1}")
                 except Exception as e:
-                    logger.error(f"[Traffic Generation] Error saving request: {str(e)}", exc_info=True)
+                    logger.error(f"[Session {config.campaign_id}] Error saving request: {str(e)}")
+                    append_campaign_log(config.campaign_id, f"ERROR: Exception saving request: {str(e)}")
                     continue
 
                 # Update progress with validation
@@ -287,7 +299,8 @@ def generate_traffic_background(config: TrafficConfig):
                 time.sleep(sleep_time)
 
             except Exception as e:
-                logger.error(f"[Traffic Generation] Error in traffic generation loop: {str(e)}", exc_info=True)
+                logger.error(f"[Session {config.campaign_id}] Error in traffic generation loop: {str(e)}")
+                append_campaign_log(config.campaign_id, f"ERROR: Exception in traffic generation loop: {str(e)}")
                 update_campaign_status(config.campaign_id, "error", {
                     "error": str(e),
                     "last_request_count": request_count,
@@ -298,8 +311,8 @@ def generate_traffic_background(config: TrafficConfig):
 
         # Update final status with validation
         final_status = "completed" if request_count > 0 else "error"
-        logger.info(f"[Traffic Generation] Campaign {config.campaign_id} completed with status: {final_status}")
-        logger.info(f"[Traffic Generation] Final stats: {request_count} total requests, {successful_requests} successful")
+        logger.info(f"[Session {config.campaign_id}] Traffic generation completed. Status: {final_status}. Total: {request_count}, Success: {successful_requests}")
+        append_campaign_log(config.campaign_id, f"COMPLETE: Traffic generation completed for campaign {config.campaign_id} at {datetime.utcnow().isoformat()} with status {final_status}. Total: {request_count}, Success: {successful_requests}")
         
         update_campaign_status(config.campaign_id, final_status, {
             "end_time": datetime.utcnow().isoformat(),
@@ -310,7 +323,8 @@ def generate_traffic_background(config: TrafficConfig):
         })
 
     except Exception as e:
-        logger.error(f"[Traffic Generation] Error in background traffic generation: {str(e)}", exc_info=True)
+        logger.error(f"[Session {config.campaign_id}] Error in background traffic generation: {str(e)}")
+        append_campaign_log(config.campaign_id, f"ERROR: Exception in background traffic generation: {str(e)}")
         update_campaign_status(config.campaign_id, "error", {
             "error": str(e),
             "last_updated": datetime.utcnow().isoformat(),
@@ -321,12 +335,15 @@ def generate_traffic_background(config: TrafficConfig):
         try:
             if active_threads.get(config.campaign_id) == thread_id:
                 del active_threads[config.campaign_id]
-                logger.info(f"[Traffic Generation] Removed campaign {config.campaign_id} from active threads")
+                logger.info(f"[Session {config.campaign_id}] Removed from active threads.")
+                append_campaign_log(config.campaign_id, f"CLEANUP: Removed from active threads at {datetime.utcnow().isoformat()}")
             if config.campaign_id in thread_locks:
                 del thread_locks[config.campaign_id]
-                logger.info(f"[Traffic Generation] Removed thread lock for campaign {config.campaign_id}")
+                logger.info(f"[Session {config.campaign_id}] Removed thread lock.")
+                append_campaign_log(config.campaign_id, f"CLEANUP: Removed thread lock at {datetime.utcnow().isoformat()}")
         except Exception as e:
-            logger.error(f"[Traffic Generation] Error cleaning up resources: {str(e)}", exc_info=True)
+            logger.error(f"[Session {config.campaign_id}] Error cleaning up resources: {str(e)}")
+            append_campaign_log(config.campaign_id, f"ERROR: Exception cleaning up resources: {str(e)}")
 
 @bp.route("/generate", methods=['POST'])
 def generate_traffic():
