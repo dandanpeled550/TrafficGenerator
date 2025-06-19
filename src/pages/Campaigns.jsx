@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import backendClient from "@/api/backendClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -95,9 +95,24 @@ const CampaignCard = ({ campaign, onDelete, onStatusChange, allProfiles }) => {
   return (
     <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-lg font-semibold text-white">
-          {campaign.name}
-        </CardTitle>
+        <div className="flex items-center gap-2">
+          <CardTitle className="text-lg font-semibold text-white">
+            {campaign.name}
+          </CardTitle>
+          {/* Delete Button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onDelete}
+            className="text-red-400 hover:bg-red-900/20 hover:text-red-500 ml-2"
+            title="Delete Campaign"
+          >
+            <Trash2 className="w-5 h-5" />
+          </Button>
+          {campaign.status === 'running' && (
+            <span className="ml-2 px-2 py-0.5 bg-green-600/20 text-green-400 text-xs rounded-full animate-pulse">Live</span>
+          )}
+        </div>
         <Badge className={getStatusColor(campaign.status)}>
           {campaign.status}
         </Badge>
@@ -122,27 +137,27 @@ const CampaignCard = ({ campaign, onDelete, onStatusChange, allProfiles }) => {
             </div>
           </div>
 
-          {/* Monitoring Stats */}
-          {/* {isInjecting && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {/* Live Stats for Running Campaigns */}
+          {campaign.status === 'running' && campaign.liveStats && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
               <div className="bg-slate-800/50 p-3 rounded-lg">
                 <p className="text-slate-400 text-sm">Total Requests</p>
-                <p className="text-white text-xl font-semibold">{monitoringData.total_requests}</p>
+                <p className="text-white text-xl font-semibold">{campaign.liveStats.total_requests}</p>
               </div>
               <div className="bg-slate-800/50 p-3 rounded-lg">
                 <p className="text-slate-400 text-sm">Success Rate</p>
-                <p className="text-white text-xl font-semibold">{monitoringData.success_rate.toFixed(2)}%</p>
+                <p className="text-white text-xl font-semibold">{campaign.liveStats.success_rate?.toFixed(2)}%</p>
               </div>
               <div className="bg-slate-800/50 p-3 rounded-lg">
                 <p className="text-slate-400 text-sm">Requests/Min</p>
-                <p className="text-white text-xl font-semibold">{monitoringData.requests_per_minute.toFixed(2)}</p>
+                <p className="text-white text-xl font-semibold">{campaign.liveStats.requests_per_minute?.toFixed(2)}</p>
               </div>
               <div className="bg-slate-800/50 p-3 rounded-lg">
-                <p className="text-slate-400 text-sm">Avg Response</p>
-                <p className="text-white text-xl font-semibold">{monitoringData.average_response_time.toFixed(2)}ms</p>
+                <p className="text-slate-400 text-sm">Duration (min)</p>
+                <p className="text-white text-xl font-semibold">{campaign.liveStats.duration_minutes}</p>
               </div>
             </div>
-          )} */}
+          )}
 
           {/* DirectTrafficInjector will handle its own buttons and display now */}
           <DirectTrafficInjector 
@@ -168,47 +183,70 @@ export default function CampaignsPage() {
   const [campaignToDelete, setCampaignToDelete] = useState(null);
   const [lastRefreshed, setLastRefreshed] = useState(null);
   const [allProfiles, setAllProfiles] = useState([]);
+  const pollingIntervalRef = useRef(null);
 
-  useEffect(() => {
-    loadData();
-    // Load all profiles for name resolution
-    backendClient.profiles.list().then(setAllProfiles).catch(console.error);
+  // Helper to fetch stats for running campaigns
+  const fetchCampaignStats = useCallback(async (campaignList) => {
+    const updatedCampaigns = await Promise.all(
+      campaignList.map(async (campaign) => {
+        if (campaign.status === 'running') {
+          try {
+            const statsResp = await backendClient.traffic.getStats(campaign.id);
+            if (statsResp && statsResp.data) {
+              return { ...campaign, liveStats: statsResp.data };
+            }
+          } catch (e) {
+            // Ignore stats fetch errors, just show campaign as is
+          }
+        }
+        return { ...campaign };
+      })
+    );
+    return updatedCampaigns;
   }, []);
 
-  // Effect for auto-refresh based on running campaigns
-  useEffect(() => {
-    const hasRunningCampaigns = campaigns.some(c => c.status === 'running');
-    let intervalId = null;
-
-    if (hasRunningCampaigns) {
-      intervalId = setInterval(() => {
-        loadData(true); // silent refresh
-      }, 10000); // Refresh every 10 seconds
-    }
-
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
-  }, [campaigns]); // Re-run effect when campaigns change (e.g., status updates)
-
-  const loadData = async (isRefresh = false) => {
+  // Main data loader with stats
+  const loadData = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setIsLoading(true);
     try {
       const campaignsData = await backendClient.sessions.list();
-      setCampaigns(campaignsData);
+      const campaignsWithStats = await fetchCampaignStats(campaignsData);
+      setCampaigns(campaignsWithStats);
     } catch (error) {
       console.error("Failed to load data:", error);
     }
     if (!isRefresh) setIsLoading(false);
-    setLastRefreshed(new Date()); // Update last refreshed time
-  };
+    setLastRefreshed(new Date());
+  }, [fetchCampaignStats]);
+
+  // Initial load and profiles
+  useEffect(() => {
+    loadData();
+    backendClient.profiles.list().then(setAllProfiles).catch(console.error);
+  }, [loadData]);
+
+  // Robust polling for running campaigns
+  useEffect(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+    const hasRunningCampaigns = campaigns.some(c => c.status === 'running');
+    if (hasRunningCampaigns) {
+      pollingIntervalRef.current = setInterval(() => {
+        loadData(true);
+      }, 3000); // Poll every 3 seconds
+    }
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, [campaigns, loadData]);
 
   const handleStatusChange = async (campaignId, newStatus) => {
     try {
       await backendClient.traffic.updateCampaignStatus(campaignId, newStatus);
-      loadData();
+      await loadData();
     } catch (error) {
       console.error("Failed to update campaign status:", error);
     }
@@ -216,14 +254,12 @@ export default function CampaignsPage() {
 
   const handleDelete = async () => {
     if (!campaignToDelete) return;
-    
     try {
       await backendClient.sessions.delete(campaignToDelete.id);
-      loadData();
+      await loadData();
     } catch (error) {
       console.error("Failed to delete campaign:", error);
     }
-    
     setShowDeleteConfirm(false);
     setCampaignToDelete(null);
   };
