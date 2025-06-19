@@ -288,6 +288,11 @@ export default function Generator() {
       } else {
         await backendClient.sessions.create(sessionData);
       }
+      // If user wants to run immediately after creation, update status via backend endpoint
+      if (runOnSubmit) {
+        const campaignId = isEditing && editingCampaignId ? editingCampaignId : sessionData.id;
+        await backendClient.traffic.updateCampaignStatus(campaignId, 'running');
+      }
 
       navigate(createPageUrl("Campaigns"));
     } catch (error) {

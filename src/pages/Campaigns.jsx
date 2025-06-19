@@ -207,13 +207,7 @@ export default function CampaignsPage() {
 
   const handleStatusChange = async (campaignId, newStatus) => {
     try {
-      const updates = { 
-        status: newStatus,
-        ...(newStatus === 'running' && { start_time: new Date().toISOString() }),
-        ...(newStatus === 'stopped' && { end_time: new Date().toISOString() })
-      };
-      
-      await backendClient.sessions.update(campaignId, updates);
+      await backendClient.traffic.updateCampaignStatus(campaignId, newStatus);
       loadData();
     } catch (error) {
       console.error("Failed to update campaign status:", error);
@@ -241,7 +235,8 @@ export default function CampaignsPage() {
 
   const handleDownloadTraffic = async (campaignId) => {
     try {
-      const trafficData = await backendClient.traffic.getCampaignGenerated(campaignId);
+      const trafficDataResponse = await backendClient.traffic.getGenerated(campaignId);
+      const trafficData = trafficDataResponse.data || [];
       if (trafficData.length === 0) {
         console.log("No traffic data to download for this campaign.");
         return;
