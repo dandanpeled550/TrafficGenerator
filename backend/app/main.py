@@ -67,7 +67,11 @@ def log_request_info():
 
 @app.after_request
 def log_response_info(response):
-    logger.info('Response: %s', response.get_data())
+    # Only log response data if not in direct passthrough mode (e.g., send_file)
+    if not getattr(response, 'direct_passthrough', False):
+        logger.info('Response: %s', response.get_data())
+    else:
+        logger.info('Response: <direct passthrough file or stream>')
     return response
 
 @app.route("/")
