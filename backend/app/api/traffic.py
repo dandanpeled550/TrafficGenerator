@@ -34,7 +34,7 @@ logger.addHandler(handler)
 logger.addHandler(console_handler)
 
 # Set up a known logs directory for campaign events
-LOGS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'logs')
+LOGS_DIR = os.environ.get('LOGS_DIR', '/tmp/logs')
 os.makedirs(LOGS_DIR, exist_ok=True)
 CAMPAIGN_EVENTS_LOG_PATH = os.path.join(LOGS_DIR, 'campaign_events.log')
 
@@ -1761,6 +1761,10 @@ def get_campaign_info(campaign_id: str):
 
 @bp.route('/events-log', methods=['GET'])
 def download_events_log():
-    if not os.path.exists(CAMPAIGN_EVENTS_LOG_PATH):
-        return abort(404, description='campaign_events.log not found')
-    return send_file(CAMPAIGN_EVENTS_LOG_PATH, as_attachment=True) 
+    try:
+        if not os.path.exists(CAMPAIGN_EVENTS_LOG_PATH):
+            return jsonify({"error": "Log file not found"}), 404
+        return send_file(CAMPAIGN_EVENTS_LOG_PATH, as_attachment=True)
+    except Exception as e:
+        logger.error(f"Error sending campaign events log: {str(e)}", exc_info=True)
+        return jsonify({"error": "Failed to retrieve log file", "details": str(e)}), 500 
