@@ -99,6 +99,21 @@ def api_health_check():
         "cors_origins": cors_origins
     })
 
+# Add endpoint to list all available API routes
+@app.route('/api/endpoints', methods=['GET'])
+def list_endpoints():
+    """Return a list of all available API endpoints and their methods."""
+    output = []
+    for rule in app.url_map.iter_rules():
+        # Exclude static routes
+        if rule.endpoint != 'static':
+            methods = list(rule.methods - {'HEAD', 'OPTIONS'})
+            output.append({
+                'endpoint': str(rule),
+                'methods': methods
+            })
+    return jsonify({'endpoints': output})
+
 # Add error handlers
 @app.errorhandler(404)
 def not_found(error):
