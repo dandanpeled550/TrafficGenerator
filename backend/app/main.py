@@ -77,7 +77,8 @@ def root():
         "message": "Traffic Generator API is running",
         "version": "1.0.0",
         "environment": os.getenv("ENVIRONMENT", "development"),
-        "cors_origins": cors_origins
+        "cors_origins": cors_origins,
+        "log_events_info": "Logs are available at /api/traffic/events-log and are stored in /tmp/logs/campaign_events.log by default on Render."
     })
 
 @app.route("/health")
