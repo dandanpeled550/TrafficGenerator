@@ -38,20 +38,32 @@ LOGS_DIR = os.environ.get('LOGS_DIR', '/tmp/logs')
 os.makedirs(LOGS_DIR, exist_ok=True)
 CAMPAIGN_EVENTS_LOG_PATH = os.path.join(LOGS_DIR, 'campaign_events.log')
 
+# Create a formatter for all custom logs
+custom_formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
+
 # Set up a custom logger for campaign/session events
 campaign_logger = logging.getLogger("campaign_logger")
 campaign_logger.setLevel(logging.INFO)
-if not campaign_logger.handlers:
-    handler = logging.FileHandler(CAMPAIGN_EVENTS_LOG_PATH)
-    formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
-    handler.setFormatter(formatter)
-    campaign_logger.addHandler(handler)
+# Remove all handlers to avoid duplicates
+for h in list(campaign_logger.handlers):
+    campaign_logger.removeHandler(h)
+campaign_handler = logging.FileHandler(CAMPAIGN_EVENTS_LOG_PATH)
+campaign_handler.setFormatter(custom_formatter)
+campaign_logger.addHandler(campaign_handler)
 
-# Add the campaign events file handler to the main logger as well
-if not any(isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == CAMPAIGN_EVENTS_LOG_PATH for h in logger.handlers):
-    campaign_events_handler = logging.FileHandler(CAMPAIGN_EVENTS_LOG_PATH)
-    campaign_events_handler.setFormatter(formatter)
-    logger.addHandler(campaign_events_handler)
+# Set up the main logger for this module
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+# Remove all handlers to avoid duplicates
+for h in list(logger.handlers):
+    logger.removeHandler(h)
+main_handler = logging.FileHandler(CAMPAIGN_EVENTS_LOG_PATH)
+main_handler.setFormatter(custom_formatter)
+logger.addHandler(main_handler)
+# Optionally, add a console handler for development
+console_handler = logging.StreamHandler()
+console_handler.setFormatter(custom_formatter)
+logger.addHandler(console_handler)
 
 bp = Blueprint('traffic', __name__)
 
@@ -1762,27 +1774,19 @@ def get_campaign_info(campaign_id: str):
         })
 
     except Exception as e:
-        logger.error(f"[API] Error getting campaign info: {str(e)}", exc_info=True)
+        logger.logerror(f"[API] Error getting campaign info: {str(e)}", exc_info=True)
         return jsonify({"error": f"Error getting campaign info: {str(e)}"}), 500
 
 @bp.route('/events-log', methods=['GET'])
 def download_events_log():
     try:
-        logger.info(f"[Events Log] Resolved log file path: {CAMPAIGN_EVENTS_LOG_PATH}")
         file_exists = os.path.exists(CAMPAIGN_EVENTS_LOG_PATH)
-        logger.info(f"[Events Log] Log file exists: {file_exists}")
-        if file_exists:
-            file_size = os.path.getsize(CAMPAIGN_EVENTS_LOG_PATH)
-            logger.info(f"[Events Log] Log file size: {file_size} bytes")
-        else:
-            logger.warning(f"[Events Log] Log file not found at {CAMPAIGN_EVENTS_LOG_PATH}")
+        if not file_exists:
             return jsonify({"error": "Log file not found"}), 404
-
-        # Flush the campaign_logger's file handler before sending
-        for handler in campaign_logger.handlers:
+        # Flush all file handlers before sending
+        for handler in logger.handlers + campaign_logger.handlers:
             if hasattr(handler, 'flush'):
                 handler.flush()
-
         return send_file(CAMPAIGN_EVENTS_LOG_PATH, as_attachment=True)
     except Exception as e:
         logger.error(f"Error sending campaign events log: {str(e)}", exc_info=True)
