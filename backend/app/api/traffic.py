@@ -1777,15 +1777,17 @@ def get_campaign_info(campaign_id: str):
         logger.logerror(f"[API] Error getting campaign info: {str(e)}", exc_info=True)
         return jsonify({"error": f"Error getting campaign info: {str(e)}"}), 500
 
-@bp.route('/test-log', methods=['POST'])
-def test_log():
+@bp.route('/events-log', methods=['GET'])
+def download_events_log():
     try:
-        logger.info("TEST LOG ENTRY from /test-log endpoint")
-        campaign_logger.info("TEST LOG ENTRY from campaign_logger via /test-log endpoint")
-        # Flush all file handlers
+        file_exists = os.path.exists(CAMPAIGN_EVENTS_LOG_PATH)
+        if not file_exists:
+            return jsonify({"error": "Log file not found"}), 404
+        # Flush all file handlers before sending
         for handler in logger.handlers + campaign_logger.handlers:
             if hasattr(handler, 'flush'):
                 handler.flush()
-        return jsonify({"success": True, "message": "Test log entries written."})
+        return send_file(CAMPAIGN_EVENTS_LOG_PATH, as_attachment=True)
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}) 
+        logger.error(f"Error sending campaign events log: {str(e)}", exc_info=True)
+        return jsonify({"error": "Failed to retrieve log file", "details": str(e)}), 500 
