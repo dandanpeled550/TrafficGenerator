@@ -47,6 +47,12 @@ if not campaign_logger.handlers:
     handler.setFormatter(formatter)
     campaign_logger.addHandler(handler)
 
+# Add the campaign events file handler to the main logger as well
+if not any(isinstance(h, logging.FileHandler) and getattr(h, 'baseFilename', None) == CAMPAIGN_EVENTS_LOG_PATH for h in logger.handlers):
+    campaign_events_handler = logging.FileHandler(CAMPAIGN_EVENTS_LOG_PATH)
+    campaign_events_handler.setFormatter(formatter)
+    logger.addHandler(campaign_events_handler)
+
 bp = Blueprint('traffic', __name__)
 
 # Global variables
