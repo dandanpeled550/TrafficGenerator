@@ -1762,8 +1762,21 @@ def get_campaign_info(campaign_id: str):
 @bp.route('/events-log', methods=['GET'])
 def download_events_log():
     try:
-        if not os.path.exists(CAMPAIGN_EVENTS_LOG_PATH):
+        logger.info(f"[Events Log] Resolved log file path: {CAMPAIGN_EVENTS_LOG_PATH}")
+        file_exists = os.path.exists(CAMPAIGN_EVENTS_LOG_PATH)
+        logger.info(f"[Events Log] Log file exists: {file_exists}")
+        if file_exists:
+            file_size = os.path.getsize(CAMPAIGN_EVENTS_LOG_PATH)
+            logger.info(f"[Events Log] Log file size: {file_size} bytes")
+        else:
+            logger.warning(f"[Events Log] Log file not found at {CAMPAIGN_EVENTS_LOG_PATH}")
             return jsonify({"error": "Log file not found"}), 404
+
+        # Flush the campaign_logger's file handler before sending
+        for handler in campaign_logger.handlers:
+            if hasattr(handler, 'flush'):
+                handler.flush()
+
         return send_file(CAMPAIGN_EVENTS_LOG_PATH, as_attachment=True)
     except Exception as e:
         logger.error(f"Error sending campaign events log: {str(e)}", exc_info=True)
