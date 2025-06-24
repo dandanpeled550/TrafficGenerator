@@ -16,36 +16,29 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
     const rtbConfig = campaign.rtb_config || {};
     const config = campaign.config || {};
     
+    // Only include fields that are needed for traffic generation
     return {
       campaign_id: campaign.id,
       target_url: campaign.target_url,
       requests_per_minute: campaign.requests_per_minute || 10,
       duration_minutes: campaign.duration_minutes || 60,
-      geo_locations: campaign.geo_locations || ['United States'],
-      log_file_path: `logs/campaign_${Date.now()}_${campaign.name.replace(/[^a-zA-Z0-9]/g, '_')}.csv`,
-      rtb_config: {
-        device_brand: rtbConfig.device_brand || 'samsung',
-        device_models: rtbConfig.device_models || ['Galaxy S24'],
-        ad_formats: rtbConfig.ad_formats || ['banner'],
-        app_categories: rtbConfig.app_categories || ['IAB9'],
-        generate_adid: rtbConfig.generate_adid !== false,
-        simulate_bid_requests: rtbConfig.simulate_bid_requests !== false
-      },
-      config: {
-        randomize_timing: config.randomize_timing !== false,
-        follow_redirects: config.follow_redirects !== false,
-        simulate_browsing: config.simulate_browsing || false,
-        enable_logging: config.enable_logging !== false,
-        log_level: config.log_level || 'info',
-        log_format: config.log_format || 'csv'
-      },
-      user_profiles: userProfiles || []
+      user_profile_ids: campaign.user_profile_ids || [],
+      profile_user_counts: campaign.profile_user_counts || {},
+      total_profile_users: Object.values(campaign.profile_user_counts || {}).reduce((a, b) => a + b, 0),
+      geo_locations: campaign.geo_locations || ["United States"],
+      rtb_config: rtbConfig,
+      config: config,
+      log_file_path: campaign.log_file_path
     };
   };
 
   const handleStartCampaign = async () => {
     setIsStarting(true);
     try {
+      // First, update campaign status to 'running' using the new endpoint
+      console.log('Updating campaign status to running:', campaign.id);
+      await backendClient.traffic.updateCampaignStatus(campaign.id, 'running');
+      
       // Get user profiles for this campaign
       const userProfiles = [];
       if (campaign.user_profile_ids && campaign.user_profile_ids.length > 0) {
@@ -59,29 +52,27 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
       // Generate traffic data configuration
       const trafficConfig = generateRTBTrafficData(campaign, userProfiles);
       
-      // Start the traffic generation using a simulated backend process
+      // Start the traffic generation using the backend API
       const result = await startTrafficGeneration(trafficConfig);
       
       if (result.success) {
-        // Update campaign with log file path and start time
-        await backendClient.sessions.update(campaign.id, {
-          status: 'running',
-          start_time: new Date().toISOString(),
-          log_file_path: trafficConfig.log_file_path,
-          total_requests: 0,
-          successful_requests: 0,
-          last_activity_time: new Date().toISOString()
-        });
-        
         onStatusChange(campaign.id, 'running');
         
         // Start monitoring the campaign progress
         monitorCampaignProgress(campaign.id, trafficConfig);
       } else {
         console.error('Failed to start campaign:', result.error);
+        // Revert status if traffic generation fails
+        await backendClient.traffic.updateCampaignStatus(campaign.id, 'draft');
       }
     } catch (error) {
       console.error('Error starting campaign:', error);
+      // Revert status on error
+      try {
+        await backendClient.traffic.updateCampaignStatus(campaign.id, 'draft');
+      } catch (revertError) {
+        console.error('Error reverting campaign status:', revertError);
+      }
     }
     setIsStarting(false);
   };
@@ -89,10 +80,11 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
   const handleStopCampaign = async () => {
     setIsStopping(true);
     try {
-      await backendClient.sessions.update(campaign.id, {
-        status: 'stopped',
-        end_time: new Date().toISOString()
-      });
+      // Stop traffic generation first
+      await backendClient.traffic.stop(campaign.id);
+      
+      // Then update campaign status to 'stopped'
+      await backendClient.traffic.updateCampaignStatus(campaign.id, 'stopped');
       
       onStatusChange(campaign.id, 'stopped');
     } catch (error) {
@@ -102,77 +94,82 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
   };
 
   const startTrafficGeneration = async (config) => {
-    // Simulate backend traffic generation
     try {
-      // This would normally call a backend function, but we'll simulate it
       console.log('Starting traffic generation with config:', config);
-      
-      // For now, we'll simulate the start
-      return { success: true };
+      const response = await backendClient.traffic.generate(config);
+      return response;
     } catch (error) {
+      console.error('Error starting traffic generation:', error);
       return { success: false, error: error.message };
     }
   };
 
   const monitorCampaignProgress = async (campaignId, config) => {
-    // Monitor campaign and update statistics
-    let requestCount = 0;
-    let successfulRequests = 0;
-    const startTime = Date.now();
-    const durationMs = (config.duration_minutes || 60) * 60 * 1000;
-    const requestInterval = 60000 / config.requests_per_minute; // ms between requests
-    
+    // Monitor campaign and update statistics using the new info endpoint
     const updateProgress = async () => {
       try {
-        // Simulate making requests
-        requestCount++;
-        
-        // Simulate 85% success rate
-        if (Math.random() > 0.15) {
-          successfulRequests++;
-        }
-        
-        const elapsed = Date.now() - startTime;
-        const progressPercentage = config.duration_minutes ? 
-          Math.min(100, (elapsed / durationMs) * 100) : 
-          Math.min(100, (requestCount / (config.requests_per_minute * 10)) * 100); // Show progress for indefinite campaigns
-        
-        // Update campaign statistics
-        await backendClient.sessions.update(campaignId, {
-          total_requests: requestCount,
-          successful_requests: successfulRequests,
-          progress_percentage: Math.round(progressPercentage),
-          last_activity_time: new Date().toISOString()
-        });
-        
-        // Check if campaign should continue
-        const campaigns = await backendClient.sessions.list();
-        const currentCampaign = campaigns.find(c => c.id === campaignId);
-        
-        if (!currentCampaign || currentCampaign.status !== 'running') {
-          return; // Campaign stopped
-        }
-        
-        // Check if campaign is complete
-        if (config.duration_minutes && elapsed >= durationMs) {
-          await backendClient.sessions.update(campaignId, {
-            status: 'completed',
-            end_time: new Date().toISOString(),
-            progress_percentage: 100
+        const campaignInfo = await backendClient.traffic.getCampaignInfo(campaignId);
+        if (campaignInfo.success) {
+          const stats = campaignInfo.data.traffic_stats;
+          const generation = campaignInfo.data.traffic_generation;
+          
+          console.log(`Campaign ${campaignId} progress:`, {
+            total_requests: stats.total_requests,
+            successful_requests: stats.successful_requests,
+            success_rate: stats.success_rate,
+            is_running: generation.is_running
           });
-          return;
+          
+          // If campaign is no longer running, stop monitoring
+          if (!generation.is_running) {
+            console.log(`Campaign ${campaignId} traffic generation completed`);
+            return;
+          }
         }
-        
-        // Schedule next update
-        setTimeout(updateProgress, requestInterval + Math.random() * 1000); // Add some randomness
-        
       } catch (error) {
-        console.error('Error updating campaign progress:', error);
+        console.error('Error monitoring campaign progress:', error);
       }
     };
     
-    // Start the monitoring
-    setTimeout(updateProgress, requestInterval);
+    // Update immediately and then every 5 seconds
+    await updateProgress();
+    const interval = setInterval(updateProgress, 5000);
+    
+    // Stop monitoring after duration
+    setTimeout(() => {
+      clearInterval(interval);
+    }, (config.duration_minutes || 60) * 60 * 1000);
+  };
+
+  const handleDownloadTraffic = async () => {
+    try {
+      const response = await backendClient.traffic.downloadTraffic(campaign.id);
+      if (response.success) {
+        // Create and download file
+        const blob = new Blob([JSON.stringify(response.data, null, 2)], {
+          type: 'application/json'
+        });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = response.filename || `traffic_${campaign.id}.json`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }
+    } catch (error) {
+      console.error('Error downloading traffic:', error);
+    }
+  };
+
+  const handleCleanupCampaign = async () => {
+    try {
+      await backendClient.traffic.cleanupCampaign(campaign.id);
+      console.log('Campaign cleanup completed');
+    } catch (error) {
+      console.error('Error cleaning up campaign:', error);
+    }
   };
 
   return (
@@ -182,7 +179,7 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
           <Zap className="w-5 h-5" />
           Custom Traffic Engine
           <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-            Simulation Mode
+            Backend API
           </Badge>
         </CardTitle>
       </CardHeader>
@@ -190,10 +187,10 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm text-slate-300">
-              RTB traffic simulation with realistic request patterns
+              RTB traffic simulation with backend API integration
             </p>
             <p className="text-xs text-slate-400 mt-1">
-              Statistical modeling • Request counting • Progress tracking
+              Real traffic generation • Status management • Progress tracking
             </p>
           </div>
           
@@ -225,6 +222,26 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
                 {isStopping ? 'Stopping...' : 'Stop Campaign'}
               </Button>
             ) : null}
+            
+            <Button
+              onClick={handleDownloadTraffic}
+              variant="outline"
+              size="sm"
+              className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Download
+            </Button>
+            
+            <Button
+              onClick={handleCleanupCampaign}
+              variant="outline"
+              size="sm"
+              className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Cleanup
+            </Button>
           </div>
         </div>
       </CardContent>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import backendClient from "@/api/backendClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,6 +47,132 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
+const CampaignCard = ({ campaign, onDelete, onStatusChange, allProfiles }) => {
+  const [error, setError] = useState(null);
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'running':
+        return 'bg-green-500/20 text-green-400 border-green-500/30';
+      case 'paused':
+        return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+      case 'completed':
+        return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+      case 'stopped':
+        return 'bg-red-500/20 text-red-400 border-red-500/30';
+      case 'draft':
+        return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
+      default:
+        return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
+    }
+  };
+
+  const getProfileNames = (profileIds) => {
+    if (!profileIds || !profileIds.length) return "No profiles selected";
+    return profileIds
+      .map(id => {
+        const profile = allProfiles.find(p => p.id === id);
+        return profile ? profile.name : `Unknown Profile (${id})`;
+      })
+      .join(", ");
+  };
+
+  const stopTrafficGeneration = async () => {
+    try {
+      // Stop traffic generation first
+      await backendClient.traffic.stop(campaign.id);
+      
+      // Then update campaign status to 'stopped'
+      await backendClient.traffic.updateCampaignStatus(campaign.id, 'stopped');
+      
+      onStatusChange(campaign.id, 'stopped');
+    } catch (error) {
+      console.error(`[Injector] Error stopping traffic generation:`, error);
+      setError(`Failed to stop traffic generation: ${error.message}`);
+    }
+  };
+
+  return (
+    <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <div className="flex items-center gap-2">
+          <CardTitle className="text-lg font-semibold text-white">
+            {campaign.name}
+          </CardTitle>
+          {/* Delete Button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onDelete}
+            className="text-red-400 hover:bg-red-900/20 hover:text-red-500 ml-2"
+            title="Delete Campaign"
+          >
+            <Trash2 className="w-5 h-5" />
+          </Button>
+          {campaign.status === 'running' && (
+            <span className="ml-2 px-2 py-0.5 bg-green-600/20 text-green-400 text-xs rounded-full animate-pulse">Live</span>
+          )}
+        </div>
+        <Badge className={getStatusColor(campaign.status)}>
+          {campaign.status}
+        </Badge>
+      </CardHeader>
+      <CardContent>
+        {error && (
+          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+            <p className="text-red-400 text-sm">{error}</p>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          {/* Campaign Info */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <p className="text-sm text-slate-400">Target URL</p>
+              <p className="text-white truncate">{campaign.target_url}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm text-slate-400">Profiles</p>
+              <p className="text-white">{getProfileNames(campaign.user_profile_ids)}</p>
+            </div>
+          </div>
+
+          {/* Live Stats for Running Campaigns */}
+          {campaign.status === 'running' && campaign.liveStats && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
+              <div className="bg-slate-800/50 p-3 rounded-lg">
+                <p className="text-slate-400 text-sm">Total Requests</p>
+                <p className="text-white text-xl font-semibold">{campaign.liveStats.total_requests}</p>
+              </div>
+              <div className="bg-slate-800/50 p-3 rounded-lg">
+                <p className="text-slate-400 text-sm">Success Rate</p>
+                <p className="text-white text-xl font-semibold">{campaign.liveStats.success_rate?.toFixed(2)}%</p>
+              </div>
+              <div className="bg-slate-800/50 p-3 rounded-lg">
+                <p className="text-slate-400 text-sm">Requests/Min</p>
+                <p className="text-white text-xl font-semibold">{campaign.liveStats.requests_per_minute?.toFixed(2)}</p>
+              </div>
+              <div className="bg-slate-800/50 p-3 rounded-lg">
+                <p className="text-slate-400 text-sm">Duration (min)</p>
+                <p className="text-white text-xl font-semibold">{campaign.liveStats.duration_minutes}</p>
+              </div>
+            </div>
+          )}
+
+          {/* DirectTrafficInjector will handle its own buttons and display now */}
+          <DirectTrafficInjector 
+            campaign={campaign} 
+            onUpdate={() => onStatusChange(campaign.id, campaign.status)}
+          />
+
+          {/* The rest of the CampaignCard content will remain here, excluding the duplicated elements now handled by DirectTrafficInjector */}
+
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
 export default function CampaignsPage() {
   const navigate = useNavigate();
   const [campaigns, setCampaigns] = useState([]);
@@ -56,51 +182,71 @@ export default function CampaignsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [campaignToDelete, setCampaignToDelete] = useState(null);
   const [lastRefreshed, setLastRefreshed] = useState(null);
+  const [allProfiles, setAllProfiles] = useState([]);
+  const pollingIntervalRef = useRef(null);
 
-  useEffect(() => {
-    loadData();
+  // Helper to fetch stats for running campaigns
+  const fetchCampaignStats = useCallback(async (campaignList) => {
+    const updatedCampaigns = await Promise.all(
+      campaignList.map(async (campaign) => {
+        if (campaign.status === 'running') {
+          try {
+            const statsResp = await backendClient.traffic.getStats(campaign.id);
+            if (statsResp && statsResp.data) {
+              return { ...campaign, liveStats: statsResp.data };
+            }
+          } catch (e) {
+            // Ignore stats fetch errors, just show campaign as is
+          }
+        }
+        return { ...campaign };
+      })
+    );
+    return updatedCampaigns;
   }, []);
 
-  // Effect for auto-refresh based on running campaigns
-  useEffect(() => {
-    const hasRunningCampaigns = campaigns.some(c => c.status === 'running');
-    let intervalId = null;
-
-    if (hasRunningCampaigns) {
-      intervalId = setInterval(() => {
-        loadData(true); // silent refresh
-      }, 10000); // Refresh every 10 seconds
-    }
-
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
-  }, [campaigns]); // Re-run effect when campaigns change (e.g., status updates)
-
-  const loadData = async (isRefresh = false) => {
+  // Main data loader with stats
+  const loadData = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setIsLoading(true);
     try {
       const campaignsData = await backendClient.sessions.list();
-      setCampaigns(campaignsData);
+      const campaignsWithStats = await fetchCampaignStats(campaignsData);
+      setCampaigns(campaignsWithStats);
     } catch (error) {
       console.error("Failed to load data:", error);
     }
     if (!isRefresh) setIsLoading(false);
-    setLastRefreshed(new Date()); // Update last refreshed time
-  };
+    setLastRefreshed(new Date());
+  }, [fetchCampaignStats]);
+
+  // Initial load and profiles
+  useEffect(() => {
+    loadData();
+    backendClient.profiles.list().then(setAllProfiles).catch(console.error);
+  }, [loadData]);
+
+  // Robust polling for running campaigns
+  useEffect(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+    }
+    const hasRunningCampaigns = campaigns.some(c => c.status === 'running');
+    if (hasRunningCampaigns) {
+      pollingIntervalRef.current = setInterval(() => {
+        loadData(true);
+      }, 3000); // Poll every 3 seconds
+    }
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, [campaigns, loadData]);
 
   const handleStatusChange = async (campaignId, newStatus) => {
     try {
-      const updates = { 
-        status: newStatus,
-        ...(newStatus === 'running' && { start_time: new Date().toISOString() }),
-        ...(newStatus === 'stopped' && { end_time: new Date().toISOString() })
-      };
-      
-      await backendClient.sessions.update(campaignId, updates);
-      loadData();
+      await backendClient.traffic.updateCampaignStatus(campaignId, newStatus);
+      await loadData();
     } catch (error) {
       console.error("Failed to update campaign status:", error);
     }
@@ -108,14 +254,12 @@ export default function CampaignsPage() {
 
   const handleDelete = async () => {
     if (!campaignToDelete) return;
-    
     try {
       await backendClient.sessions.delete(campaignToDelete.id);
-      loadData();
+      await loadData();
     } catch (error) {
       console.error("Failed to delete campaign:", error);
     }
-    
     setShowDeleteConfirm(false);
     setCampaignToDelete(null);
   };
@@ -127,7 +271,8 @@ export default function CampaignsPage() {
 
   const handleDownloadTraffic = async (campaignId) => {
     try {
-      const trafficData = await backendClient.traffic.getCampaignGenerated(campaignId);
+      const trafficDataResponse = await backendClient.traffic.getGenerated(campaignId);
+      const trafficData = trafficDataResponse.data || [];
       if (trafficData.length === 0) {
         console.log("No traffic data to download for this campaign.");
         return;
@@ -150,23 +295,6 @@ export default function CampaignsPage() {
   const confirmDelete = (campaign) => {
     setCampaignToDelete(campaign);
     setShowDeleteConfirm(true);
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'running':
-        return 'bg-green-500/20 text-green-400 border-green-500/30';
-      case 'paused':
-        return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-      case 'completed':
-        return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-      case 'stopped':
-        return 'bg-red-500/20 text-red-400 border-red-500/30';
-      case 'draft':
-        return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
-      default:
-        return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
-    }
   };
 
   const filteredCampaigns = campaigns.filter(campaign => {
@@ -301,192 +429,20 @@ export default function CampaignsPage() {
                   transition={{ delay: index * 0.05 }}
                   className="space-y-4"
                 >
-                  {/* Direct Traffic Injector - Show for campaigns that need it */}
-                  {needsTrafficInjection && (
+                  {/* Show either DirectTrafficInjector or CampaignCard, not both */}
+                  {needsTrafficInjection ? (
                     <DirectTrafficInjector 
                       campaign={campaign} 
-                      onUpdate={loadData}
+                      onUpdate={() => onStatusChange(campaign.id, campaign.status)}
+                    />
+                  ) : (
+                    <CampaignCard
+                      campaign={campaign}
+                      onDelete={() => confirmDelete(campaign)}
+                      onStatusChange={handleStatusChange}
+                      allProfiles={allProfiles}
                     />
                   )}
-
-                  {/* Main Campaign Card */}
-                  <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm hover:border-slate-700 transition-all duration-300">
-                    <CardHeader className="border-b border-slate-800">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-3 mb-2">
-                            <CardTitle className="text-xl font-bold text-white truncate">
-                              {campaign.name}
-                            </CardTitle>
-                            <Badge className={`border ${getStatusColor(campaign.status)}`}>
-                              {campaign.status}
-                            </Badge>
-                            <Badge className="bg-cyan-500/20 text-cyan-400 border-cyan-500/30">
-                              RTB
-                            </Badge>
-                          </div>
-                          <p className="text-slate-400 truncate">{campaign.target_url}</p>
-                        </div>
-                        
-                        <div className="flex items-center gap-2">
-                          {/* Status Control Buttons */}
-                          {campaign.status === 'draft' || campaign.status === 'paused' ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleStatusChange(campaign.id, 'running')}
-                              className="border-green-700 text-green-400 hover:bg-green-900/20"
-                            >
-                              <Play className="w-4 h-4 mr-1" />
-                              Start
-                            </Button>
-                          ) : campaign.status === 'running' ? (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleStatusChange(campaign.id, 'paused')}
-                              className="border-yellow-700 text-yellow-400 hover:bg-yellow-900/20"
-                            >
-                              <Pause className="w-4 h-4 mr-1" />
-                              Pause
-                            </Button>
-                          ) : null}
-                          
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="outline" size="sm" className="border-slate-700 hover:bg-slate-800">
-                                <MoreVertical className="w-4 h-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent className="bg-slate-900 border-slate-700">
-                              <DropdownMenuItem 
-                                onClick={() => navigate(createPageUrl("Generator") + `?edit=${campaign.id}`)}
-                              >
-                                <Edit3 className="w-4 h-4 mr-2" />
-                                Edit Campaign
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleDownloadLogs(campaign.log_file_path)}
-                                disabled={!campaign.log_file_path}
-                              >
-                                <Download className="w-4 h-4 mr-2" />
-                                Download Logs
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => handleDownloadTraffic(campaign.id)}
-                              >
-                                <Download className="w-4 h-4 mr-2" />
-                                Download Traffic
-                              </DropdownMenuItem>
-                              {(campaign.status === 'running' || campaign.status === 'paused') && (
-                                <DropdownMenuItem 
-                                  onClick={() => handleStatusChange(campaign.id, 'stopped')}
-                                >
-                                  <Square className="w-4 h-4 mr-2" />
-                                  Stop Campaign
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem 
-                                onClick={() => confirmDelete(campaign)}
-                                className="text-red-400 hover:text-red-300"
-                              >
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                Delete Campaign
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    
-                    <CardContent className="p-6">
-                      {/* Progress Bar and Last Activity */}
-                      {campaign.status !== 'draft' && (
-                        <div className="mb-6">
-                           <div className="flex justify-between items-center mb-2">
-                                <p className="text-sm text-slate-300 font-medium">
-                                 Progress 
-                                 <span className="text-slate-400 ml-2">({totalRequests.toLocaleString()} requests)</span>
-                                </p>
-                                <p className="text-xs text-slate-400">
-                                 {campaign.duration_minutes === null ? 'Continuous' : `${(campaign.progress_percentage || 0).toFixed(0)}%`}
-                                </p>
-                           </div>
-                           {campaign.duration_minutes !== null && <Progress value={campaign.progress_percentage || 0} className="w-full h-2" />}
-                           <p className="text-xs text-slate-500 text-right mt-2">
-                            Last activity: {campaign.last_activity_time ? formatDistanceToNow(new Date(campaign.last_activity_time), { addSuffix: true }) : 'N/A'}
-                           </p>
-                        </div>
-                      )}
-
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-6 text-sm">
-                        <div className="space-y-1">
-                          <p className="text-slate-400">Total Requests</p>
-                          <p className="text-lg font-bold text-white">{totalRequests.toLocaleString()}</p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-slate-400">Successful</p>
-                          <p className="text-lg font-bold text-green-400 flex items-center gap-1.5">
-                            <CheckCircle className="w-4 h-4" /> {successfulRequests.toLocaleString()}
-                          </p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-slate-400">Failed</p>
-                          <p className="text-lg font-bold text-red-400 flex items-center gap-1.5">
-                            <XCircle className="w-4 h-4" /> {failedRequests.toLocaleString()}
-                          </p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-slate-400">Success Rate</p>
-                          <p className="text-lg font-bold text-white">{successRate.toFixed(1)}%</p>
-                        </div>
-                        <div className="space-y-1">
-                          <p className="text-slate-400">Requests/Min</p>
-                          <p className="text-lg font-bold text-white">{campaign.requests_per_minute}</p>
-                        </div>
-                        <div className="space-y-1">
-                           <p className="text-slate-400">Duration</p>
-                           <p className="text-lg font-bold text-white">
-                            {campaign.duration_minutes === null ? (
-                              <span className="flex items-center gap-1">
-                                <Infinity className="w-4 h-4" /> Continuous
-                              </span>
-                            ) : (
-                              `${campaign.duration_minutes}m`
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      
-                      <div className="mt-6 pt-4 border-t border-slate-700">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                          <div className="flex items-center gap-3">
-                            <Users className="w-5 h-5 text-purple-400" />
-                            <div>
-                               <p className="text-slate-400">Profiles</p>
-                               <p className="font-semibold text-white truncate" title={getProfileNames(campaign.user_profile_ids)}>{getProfileNames(campaign.user_profile_ids)}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                             <Globe className="w-5 h-5 text-orange-400" />
-                             <div>
-                                <p className="text-slate-400">Locations</p>
-                                <p className="font-semibold text-white">{campaign.geo_locations?.join(', ') || 'N/A'}</p>
-                             </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <Wand2 className="w-5 h-5 text-blue-400" />
-                            <div>
-                               <p className="text-slate-400">Edge Cases</p>
-                               <p className="font-semibold text-white">
-                                {campaign.edge_cases?.filter(ec => ec.is_enabled).length || 0} enabled
-                               </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
                 </motion.div>
                 )
               })}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -11,182 +11,235 @@ import {
   Clock,
   Target,
   Activity,
-  Download
+  Download,
+  RefreshCw,
+  Loader2,
+  Zap
 } from "lucide-react";
 
-export default function TrafficSimulationPreview({ formData }) {
+export function TrafficSimulationPreview({ formData, onGenerate }) {
   const [sampleRequests, setSampleRequests] = useState([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [campaignStatus, setCampaignStatus] = useState(null);
+  const [statusCheckInterval, setStatusCheckInterval] = useState(null);
 
   useEffect(() => {
     generateSampleRequests();
   }, [formData]);
 
-  const generateSampleRequests = () => {
-    const requests = [];
-    const deviceBrands = formData.rtb_config?.device_models || ['Galaxy S24', 'Galaxy S23', 'Galaxy A54'];
-    const geoLocations = formData.geo_locations || ['United States'];
-    const adFormats = formData.rtb_config?.ad_formats || ['banner'];
-    
-    for (let i = 0; i < 5; i++) {
-      const deviceModel = deviceBrands[Math.floor(Math.random() * deviceBrands.length)];
-      const country = geoLocations[Math.floor(Math.random() * geoLocations.length)];
-      const adFormat = adFormats[Math.floor(Math.random() * adFormats.length)];
-      const timestamp = new Date(Date.now() + i * 60000).toISOString();
+  // Add status checking effect
+  useEffect(() => {
+    if (formData.id) {
+      // Start status checking
+      const interval = setInterval(async () => {
+        try {
+          const response = await backendClient.traffic.getStatus(formData.id);
+          setCampaignStatus(response.data);
+          
+          // If campaign is completed or error, stop checking
+          if (response.data.status === 'completed' || response.data.status === 'error') {
+            clearInterval(interval);
+          }
+        } catch (error) {
+          console.error("Failed to check campaign status:", error);
+        }
+      }, 5000); // Check every 5 seconds
       
-      requests.push({
-        id: `req-${Date.now()}-${i}`,
-        timestamp,
-        device_model: deviceModel,
-        country,
-        ad_format: adFormat,
-        user_agent: `Mozilla/5.0 (Linux; Android 14; ${deviceModel}) AppleWebKit/537.36`,
-        adid: `${Math.random().toString(36).substr(2, 8)}-${Math.random().toString(36).substr(2, 4)}`,
-        bid_id: `bid-${Math.random().toString(36).substr(2, 12)}`,
-        status: Math.random() > 0.15 ? 'success' : 'failed',
-        response_time: Math.floor(Math.random() * 500) + 100
-      });
+      setStatusCheckInterval(interval);
+      
+      // Cleanup on unmount
+      return () => {
+        if (interval) {
+          clearInterval(interval);
+        }
+      };
     }
-    
-    setSampleRequests(requests);
+  }, [formData.id]);
+
+  const generateSampleRequests = async () => {
+    try {
+      const response = await backendClient.traffic.generateSample(formData);
+      setSampleRequests(response.data);
+    } catch (error) {
+      console.error("Failed to generate sample requests:", error);
+    }
+  };
+
+  const handleGenerate = async () => {
+    setIsGenerating(true);
+    try {
+      await onGenerate();
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const downloadSampleCSV = () => {
+    if (sampleRequests.length === 0) return;
+
     const headers = [
-      'timestamp', 'bid_id', 'device_model', 'country', 'ad_format', 
-      'adid', 'status', 'response_time', 'user_agent'
+      "Timestamp",
+      "IP Address",
+      "User Agent",
+      "Referrer",
+      "Request Type",
+      "Status Code",
+      "Response Time",
+      "Edge Case"
     ];
-    
+
     const csvContent = [
-      headers.join(','),
-      ...sampleRequests.map(req => [
-        req.timestamp,
-        req.bid_id,
-        req.device_model,
-        req.country,
-        req.ad_format,
-        req.adid,
-        req.status,
-        req.response_time,
-        `"${req.user_agent}"`
-      ].join(','))
-    ].join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+      headers.join(","),
+      ...sampleRequests.map(request => [
+        request.timestamp,
+        request.ip_address,
+        request.user_agent,
+        request.referrer,
+        request.request_type,
+        request.status_code,
+        request.response_time,
+        request.edge_case || ""
+      ].join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv" });
     const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'sample_rtb_traffic.csv';
+    a.download = "sample_traffic.csv";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
   };
 
-  return (
-    <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
-      <CardHeader className="border-b border-slate-800">
-        <CardTitle className="text-xl font-bold text-white flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Monitor className="w-5 h-5 text-blue-400" />
-            Traffic Preview
-          </div>
-          <Button
-            onClick={downloadSampleCSV}
-            variant="outline"
-            size="sm"
-            className="border-slate-700 hover:bg-slate-800"
-          >
-            <Download className="w-4 h-4 mr-2" />
-            Sample CSV
-          </Button>
-        </CardTitle>
-        <p className="text-sm text-slate-400">
-          Preview of RTB traffic data that will be generated based on your configuration.
-        </p>
-      </CardHeader>
-      <CardContent className="p-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <div className="p-3 bg-slate-800/30 rounded-lg border border-slate-700">
-            <div className="flex items-center gap-2 mb-1">
-              <Target className="w-4 h-4 text-green-400" />
-              <span className="text-xs text-slate-400 uppercase tracking-wide">Target</span>
-            </div>
-            <p className="text-sm text-white font-semibold truncate">{formData.target_url || 'Not set'}</p>
-          </div>
-          
-          <div className="p-3 bg-slate-800/30 rounded-lg border border-slate-700">
-            <div className="flex items-center gap-2 mb-1">
-              <Activity className="w-4 h-4 text-blue-400" />
-              <span className="text-xs text-slate-400 uppercase tracking-wide">Rate</span>
-            </div>
-            <p className="text-sm text-white font-semibold">{formData.requests_per_minute || 10}/min</p>
-          </div>
-          
-          <div className="p-3 bg-slate-800/30 rounded-lg border border-slate-700">
-            <div className="flex items-center gap-2 mb-1">
-              <Clock className="w-4 h-4 text-purple-400" />
-              <span className="text-xs text-slate-400 uppercase tracking-wide">Duration</span>
-            </div>
-            <p className="text-sm text-white font-semibold">
-              {formData.duration_minutes ? `${formData.duration_minutes}m` : 'Indefinite'}
-            </p>
-          </div>
-          
-          <div className="p-3 bg-slate-800/30 rounded-lg border border-slate-700">
-            <div className="flex items-center gap-2 mb-1">
-              <Globe className="w-4 h-4 text-emerald-400" />
-              <span className="text-xs text-slate-400 uppercase tracking-wide">Locations</span>
-            </div>
-            <p className="text-sm text-white font-semibold">{formData.geo_locations?.length || 0} countries</p>
-          </div>
-        </div>
+  // Add status display component
+  const renderStatusBadge = () => {
+    if (!campaignStatus) return null;
+    
+    const statusColors = {
+      running: 'bg-green-500/20 text-green-300 border-green-500/30',
+      completed: 'bg-blue-500/20 text-blue-300 border-blue-500/30',
+      error: 'bg-red-500/20 text-red-300 border-red-500/30',
+      stopped: 'bg-yellow-500/20 text-yellow-300 border-yellow-500/30',
+      draft: 'bg-slate-500/20 text-slate-300 border-slate-500/30'
+    };
+    
+    return (
+      <div className="flex items-center gap-2 mb-4">
+        <Badge className={statusColors[campaignStatus.status] || statusColors.draft}>
+          {campaignStatus.status.toUpperCase()}
+        </Badge>
+        {campaignStatus.progress_percentage > 0 && (
+          <span className="text-sm text-slate-400">
+            Progress: {campaignStatus.progress_percentage.toFixed(1)}%
+          </span>
+        )}
+      </div>
+    );
+  };
 
-        <div>
-          <h4 className="text-lg font-semibold text-white mb-4">Sample RTB Requests</h4>
-          <ScrollArea className="h-80">
-            <div className="space-y-3">
-              {sampleRequests.map((request) => (
-                <div key={request.id} className="p-4 bg-slate-800/40 rounded-lg border border-slate-700">
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30">
-                        {request.bid_id}
-                      </Badge>
-                      <Badge className={
-                        request.status === 'success' 
-                          ? 'bg-green-500/20 text-green-300 border-green-500/30'
-                          : 'bg-red-500/20 text-red-300 border-red-500/30'
-                      }>
-                        {request.status}
-                      </Badge>
-                    </div>
-                    <span className="text-xs text-slate-400">
-                      {new Date(request.timestamp).toLocaleTimeString()}
-                    </span>
+  return (
+    <Card className="bg-slate-900/50 border-slate-800">
+      <CardHeader>
+        <CardTitle className="text-xl font-bold text-white flex items-center gap-2">
+          <Activity className="w-5 h-5 text-blue-400" />
+          Traffic Preview
+        </CardTitle>
+        <CardDescription className="text-slate-400">
+          Preview the traffic that will be generated based on your configuration
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {renderStatusBadge()}
+        
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <Button
+              variant="outline"
+              onClick={generateSampleRequests}
+              className="text-slate-400 hover:text-white"
+            >
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Refresh Preview
+            </Button>
+            <Button
+              variant="outline"
+              onClick={downloadSampleCSV}
+              className="text-slate-400 hover:text-white"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Download Sample
+            </Button>
+          </div>
+
+          <div className="grid gap-4">
+            {sampleRequests.map((request, index) => (
+              <div
+                key={index}
+                className="p-4 bg-slate-800/30 rounded-lg border border-slate-700"
+              >
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-slate-400">Timestamp</p>
+                    <p className="text-white font-mono">{request.timestamp}</p>
                   </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-                    <div className="flex items-center gap-2">
-                      <Smartphone className="w-4 h-4 text-slate-400" />
-                      <span className="text-slate-300">{request.device_model}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Globe className="w-4 h-4 text-slate-400" />
-                      <span className="text-slate-300">{request.country}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <User className="w-4 h-4 text-slate-400" />
-                      <span className="text-slate-300">{request.ad_format}</span>
-                    </div>
+                  <div>
+                    <p className="text-sm text-slate-400">IP Address</p>
+                    <p className="text-white font-mono">{request.ip_address}</p>
                   </div>
-                  
-                  <div className="mt-2 text-xs text-slate-400 truncate">
-                    ADID: {request.adid} • Response: {request.response_time}ms
+                  <div>
+                    <p className="text-sm text-slate-400">User Agent</p>
+                    <p className="text-white font-mono text-sm truncate">
+                      {request.user_agent}
+                    </p>
                   </div>
+                  <div>
+                    <p className="text-sm text-slate-400">Referrer</p>
+                    <p className="text-white font-mono text-sm truncate">
+                      {request.referrer}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-400">Request Type</p>
+                    <p className="text-white font-mono">{request.request_type}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-400">Status Code</p>
+                    <p className="text-white font-mono">{request.status_code}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-400">Response Time</p>
+                    <p className="text-white font-mono">{request.response_time}ms</p>
+                  </div>
+                  {request.edge_case && (
+                    <div>
+                      <p className="text-sm text-slate-400">Edge Case</p>
+                      <p className="text-white font-mono">{request.edge_case}</p>
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          </ScrollArea>
+              </div>
+            ))}
+          </div>
+
+          <Button
+            onClick={handleGenerate}
+            disabled={isGenerating}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            {isGenerating ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Generating Traffic...
+              </>
+            ) : (
+              <>
+                <Zap className="w-4 h-4 mr-2" />
+                Start Traffic Generation
+              </>
+            )}
+          </Button>
         </div>
       </CardContent>
     </Card>

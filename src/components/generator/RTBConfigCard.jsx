@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -36,6 +35,20 @@ const INTERESTS = [
 ];
 
 export default function RTBConfigCard({ formData, onInputChange, profilesSelected }) {
+  // Initialize default values if not present
+  React.useEffect(() => {
+    if (!formData.rtb_config) {
+      onInputChange('rtb_config', {
+        device_brand: 'samsung',
+        device_models: SAMSUNG_MODELS.slice(0, 3), // Default to first 3 models
+        ad_formats: ['banner', 'interstitial', 'native'], // Default formats
+        app_categories: ['Games', 'Social Media', 'Shopping'], // Default categories
+        generate_adid: true,
+        simulate_bid_requests: true
+      });
+    }
+  }, []);
+
   const handleDeviceModelToggle = (model) => {
     const currentModels = formData.rtb_config?.device_models || [];
     const updatedModels = currentModels.includes(model)
@@ -54,7 +67,36 @@ export default function RTBConfigCard({ formData, onInputChange, profilesSelecte
     onInputChange('rtb_config.ad_formats', updatedFormats);
   };
 
+  const handleAppCategoryToggle = (category) => {
+    const currentCategories = formData.rtb_config?.app_categories || [];
+    const updatedCategories = currentCategories.includes(category)
+      ? currentCategories.filter(c => c !== category)
+      : [...currentCategories, category];
+    
+    onInputChange('rtb_config.app_categories', updatedCategories);
+  };
+
   const isDisabledByProfile = profilesSelected;
+
+  // Ensure we have at least one device model, ad format, and app category selected
+  React.useEffect(() => {
+    const rtb_config = formData.rtb_config || {};
+    const updates = {};
+
+    if (!rtb_config.device_models?.length) {
+      updates.device_models = SAMSUNG_MODELS.slice(0, 3);
+    }
+    if (!rtb_config.ad_formats?.length) {
+      updates.ad_formats = ['banner', 'interstitial', 'native'];
+    }
+    if (!rtb_config.app_categories?.length) {
+      updates.app_categories = ['Games', 'Social Media', 'Shopping'];
+    }
+
+    if (Object.keys(updates).length > 0) {
+      onInputChange('rtb_config', { ...rtb_config, ...updates });
+    }
+  }, [formData.rtb_config]);
 
   return (
     <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
@@ -100,7 +142,7 @@ export default function RTBConfigCard({ formData, onInputChange, profilesSelecte
              {isDisabledByProfile && <p className="text-xs text-slate-500 mt-1">Device brand determined by selected user profile(s).</p>}
           </div>
 
-          {/* Device Models: Might be less relevant here if profiles handle it */}
+          {/* Device Models */}
           {!isDisabledByProfile && formData.rtb_config?.device_brand !== 'any' && (
             <div className="space-y-3">
               <Label className="text-slate-300 font-semibold">Default Samsung Device Models</Label>
@@ -160,8 +202,34 @@ export default function RTBConfigCard({ formData, onInputChange, profilesSelecte
             ))}
           </div>
         </div>
+
+        {/* App Categories */}
+        <div className="space-y-4">
+          <div className="flex items-center gap-2">
+            <Target className="w-4 h-4 text-green-400" />
+            <h3 className="font-semibold text-white">App Categories (Defaults)</h3>
+          </div>
+          {isDisabledByProfile && <p className="text-xs text-slate-500 mb-2">App categories determined by selected user profile(s).</p>}
+          <div className={`grid grid-cols-2 md:grid-cols-3 gap-2 ${isDisabledByProfile ? 'opacity-70 cursor-not-allowed' : ''}`}>
+            {APP_CATEGORIES.map((category) => (
+              <div
+                key={category}
+                onClick={() => !isDisabledByProfile && handleAppCategoryToggle(category)}
+                className={`p-3 rounded-lg border text-sm ${
+                  isDisabledByProfile ? 'opacity-70 cursor-not-allowed' : 'cursor-pointer'
+                } ${
+                  (formData.rtb_config?.app_categories || []).includes(category)
+                    ? 'border-green-500 bg-green-500/10 text-green-400'
+                    : 'border-slate-700 bg-slate-800/30 text-slate-300 hover:border-slate-600'
+                }`}
+              >
+                {category}
+              </div>
+            ))}
+          </div>
+        </div>
         
-        {/* User Demographics Section Removed */}
+        {/* User Demographics Section */}
         {profilesSelected && (
             <div className="p-4 bg-slate-800/30 rounded-lg border border-slate-700">
                 <div className="flex items-center gap-2">
@@ -171,7 +239,7 @@ export default function RTBConfigCard({ formData, onInputChange, profilesSelecte
             </div>
         )}
 
-        {/* RTB Protocol Settings (These might remain as global campaign settings) */}
+        {/* RTB Protocol Settings */}
         <div className="space-y-4">
           <div className="flex items-center gap-2">
             <Zap className="w-4 h-4 text-yellow-400" />
@@ -198,11 +266,16 @@ export default function RTBConfigCard({ formData, onInputChange, profilesSelecte
             <div className="flex items-center justify-between p-4 bg-slate-800/30 rounded-lg border border-slate-700">
               <div>
                 <p className="font-semibold text-white">Simulate Bid Requests</p>
-                <p className="text-sm text-slate-400">Generate OpenRTB-compliant bid request data</p>
+                <p className="text-sm text-slate-400">
+                  {profilesSelected 
+                    ? "Bid request simulation determined by user profile(s)." 
+                    : "Simulate RTB bid requests for each ad impression."}
+                </p>
               </div>
               <Switch
                 checked={formData.rtb_config?.simulate_bid_requests ?? true}
                 onCheckedChange={(value) => onInputChange('rtb_config.simulate_bid_requests', value)}
+                disabled={profilesSelected && formData.rtb_config?.simulate_bid_requests_from_profile}
               />
             </div>
           </div>

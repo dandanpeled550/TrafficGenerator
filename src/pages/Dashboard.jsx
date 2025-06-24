@@ -10,9 +10,12 @@ import {
   Activity, 
   TrendingUp,
   Clock,
-  CheckCircle
+  CheckCircle,
+  CircleCheck,
+  CircleX
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { Badge } from "@/components/ui/badge";
 
 import StatsCard from "../components/dashboard/StatsCard";
 import ActiveSessions from "../components/dashboard/ActiveSessions";
@@ -22,11 +25,29 @@ export default function Dashboard() {
   const [sessions, setSessions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [chartData, setChartData] = useState([]);
+  const [backendStatus, setBackendStatus] = useState('checking');
 
   useEffect(() => {
     loadSessions();
     generateMockChartData();
+    checkBackendConnection();
+
+    const interval = setInterval(() => {
+      checkBackendConnection();
+    }, 10000); // Check every 10 seconds
+
+    return () => clearInterval(interval); // Clean up interval on unmount
   }, []);
+
+  const checkBackendConnection = async () => {
+    try {
+      await backendClient.checkConnection();
+      setBackendStatus('connected');
+    } catch (error) {
+      console.error("Backend connection check failed:", error);
+      setBackendStatus('disconnected');
+    }
+  };
 
   const loadSessions = async () => {
     setIsLoading(true);
@@ -98,6 +119,23 @@ export default function Dashboard() {
           <div>
             <h1 className="text-4xl font-bold text-white mb-2">Traffic Dashboard</h1>
             <p className="text-slate-400 text-lg">Monitor and control your web traffic generation campaigns</p>
+            <div className="mt-2 flex items-center text-sm">
+              {backendStatus === 'checking' && (
+                <Badge variant="outline" className="bg-yellow-500/20 text-yellow-300 border-yellow-500/30">
+                  Checking Backend Connection...
+                </Badge>
+              )}
+              {backendStatus === 'connected' && (
+                <Badge variant="outline" className="bg-green-500/20 text-green-300 border-green-500/30 flex items-center gap-1">
+                  <CircleCheck className="w-4 h-4" /> Backend Connected
+                </Badge>
+              )}
+              {backendStatus === 'disconnected' && (
+                <Badge variant="destructive" className="bg-red-500/20 text-red-300 border-red-500/30 flex items-center gap-1">
+                  <CircleX className="w-4 h-4" /> Backend Disconnected
+                </Badge>
+              )}
+            </div>
           </div>
           <Link to={createPageUrl("Generator")}>
             <Button className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-semibold px-6 py-3 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300">
