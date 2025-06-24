@@ -1580,8 +1580,8 @@ def test_traffic_functions():
 
 @bp.route("/campaigns/<campaign_id>/status", methods=['PUT'])
 def update_campaign_status_endpoint(campaign_id: str):
-    """Update campaign status and manage transitions"""
     from app.api.sessions import sessions
+    """Update campaign status and manage transitions"""
     try:
         data = request.get_json()
         if not data:
