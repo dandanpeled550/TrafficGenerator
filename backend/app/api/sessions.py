@@ -6,6 +6,7 @@ from .logging_config import get_logger
 # from bson import ObjectId # Commented out ObjectId import
 
 # from app.database import get_database # Commented out database import
+from app.api.profiles import profiles
 
 # Configure logging
 logger = get_logger('Session')
@@ -116,6 +117,12 @@ def create_session():
         if not (isinstance(target_url, str) and (target_url.startswith('http://') or target_url.startswith('https://'))):
             return jsonify({"error": "Invalid target_url: must start with http:// or https://"}), 400
 
+        # Validate user_profile_ids
+        user_profile_ids = data.get('user_profile_ids', [])
+        invalid_ids = [pid for pid in user_profile_ids if pid not in profiles]
+        if invalid_ids:
+            return jsonify({"error": f"Invalid user_profile_ids: {invalid_ids}"}), 400
+
         session_id = f"session_{len(sessions) + 1}"
         
         # Ensure rtb_config has all required fields
@@ -149,7 +156,7 @@ def create_session():
             geo_locations=data.get('geo_locations', ["United States"]),
             rtb_config=rtb_config,
             config=data.get('config', {}),
-            user_profile_ids=data.get('user_profile_ids', []),
+            user_profile_ids=user_profile_ids,
             profile_user_counts=profile_user_counts,
             total_profile_users=total_profile_users,
             log_file_path=data.get('log_file_path'),
@@ -232,6 +239,13 @@ def update_session(session_id: str):
             target_url = data['target_url']
             if not (isinstance(target_url, str) and (target_url.startswith('http://') or target_url.startswith('https://'))):
                 return jsonify({"error": "Invalid target_url: must start with http:// or https://"}), 400
+
+        # Validate user_profile_ids if provided
+        if 'user_profile_ids' in data:
+            user_profile_ids = data['user_profile_ids']
+            invalid_ids = [pid for pid in user_profile_ids if pid not in profiles]
+            if invalid_ids:
+                return jsonify({"error": f"Invalid user_profile_ids: {invalid_ids}"}), 400
 
         session = sessions[session_id]
         

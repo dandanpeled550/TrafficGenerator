@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from .logging_config import get_logger
 import uuid
 from app.api.sessions import sessions
+from app.api.profiles import profiles
 
 # Define the Blueprint before any route decorators
 bp = Blueprint('traffic', __name__)
@@ -166,17 +167,26 @@ class TrafficConfig:
             "end_time": self.end_time.isoformat() if self.end_time else None
         }
 
-def generate_traffic_background(config: TrafficConfig):
+def generate_traffic_background(config: TrafficConfig, thread_id: str):
     """Generate traffic in the background"""
-    thread_id = str(uuid.uuid4())
-    active_threads[config.campaign_id] = thread_id
-    
     try:
         campaign_logger.info(f"[Session {config.campaign_id}] Traffic generation started.")
         append_campaign_log(config.campaign_id, f"START: Traffic generation started for campaign {config.campaign_id} at {datetime.utcnow().isoformat()}")
         logger.info(f"[Traffic Generation] Thread ID: {thread_id}")
         logger.info(f"[Traffic Generation] Config: {json.dumps(config.to_dict(), indent=2)}")
         
+        # Fetch actual profile data for each user_profile_id
+        try:
+            config.user_profiles = []
+            for pid in config.user_profile_ids:
+                if pid in profiles:
+                    config.user_profiles.append(profiles[pid].__dict__)
+                else:
+                    logger.warning(f"[Traffic Generation] Profile ID {pid} not found in profiles store.")
+        except Exception as e:
+            logger.error(f"[Traffic Generation] Error fetching user profiles: {str(e)}")
+            config.user_profiles = []
+
         # Create campaign-specific directory and file with proper error handling
         campaign_dir = os.path.join(TRAFFIC_DATA_DIR, config.campaign_id)
         campaign_file = os.path.join(campaign_dir, 'traffic.json')
@@ -450,19 +460,17 @@ def generate_traffic():
             
             # Start traffic generation in background
             logger.info(f"[API] Starting background thread for campaign {campaign_id}")
+            thread_id = str(uuid.uuid4())
+            active_threads[campaign_id] = thread_id
+            logger.info(f"[API] Assigned thread ID {thread_id} for campaign {campaign_id}")
             thread = threading.Thread(
                 target=generate_traffic_background,
-                args=(config,),
+                args=(config, thread_id),
                 daemon=True,
                 name=f"traffic_generator_{campaign_id}"
             )
             thread.start()
             logger.info(f"[API] Background thread started for campaign {campaign_id}")
-
-            # Store thread reference and ID
-            thread_id = str(uuid.uuid4())
-            active_threads[campaign_id] = thread_id
-            logger.info(f"[API] Stored thread ID {thread_id} for campaign {campaign_id}")
 
             # Update campaign status to indicate traffic generation is active
             logger.info(f"[API] Updating campaign status to indicate traffic generation is active")
