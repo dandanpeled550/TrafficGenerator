@@ -2,13 +2,13 @@ from flask import Blueprint, request, jsonify
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-import logging
+from .logging_config import get_logger
 # from bson import ObjectId # Commented out ObjectId import
 
 # from app.database import get_database # Commented out database import
 
 # Configure logging
-logger = logging.getLogger(__name__)
+logger = get_logger('Session')
 
 bp = Blueprint('sessions', __name__)
 

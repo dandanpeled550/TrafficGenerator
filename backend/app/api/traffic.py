@@ -7,65 +7,20 @@ import random
 import time
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
-import logging
-from threading import Lock
+from .logging_config import get_logger
 import uuid
 from app.api.sessions import sessions  # Import sessions storage
 
 # Configure logging
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-
-# Create a file handler
-handler = logging.FileHandler('traffic_generator.log')
-handler.setLevel(logging.DEBUG)
-
-# Create a console handler
-console_handler = logging.StreamHandler()
-console_handler.setLevel(logging.INFO)
-
-# Create a formatter
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-console_handler.setFormatter(formatter)
-
-# Add the handlers to the logger
-logger.addHandler(handler)
-logger.addHandler(console_handler)
+logger = get_logger('Traffic')
 
 # Set up a known logs directory for campaign events
 LOGS_DIR = os.environ.get('LOGS_DIR', '/tmp/logs')
 os.makedirs(LOGS_DIR, exist_ok=True)
 CAMPAIGN_EVENTS_LOG_PATH = os.path.join(LOGS_DIR, 'campaign_events.log')
 
-# Create a formatter for all custom logs
-custom_formatter = logging.Formatter('%(asctime)s %(levelname)s: %(message)s')
-
 # Set up a custom logger for campaign/session events
-campaign_logger = logging.getLogger("campaign_logger")
-campaign_logger.setLevel(logging.INFO)
-# Remove all handlers to avoid duplicates
-for h in list(campaign_logger.handlers):
-    campaign_logger.removeHandler(h)
-campaign_handler = logging.FileHandler(CAMPAIGN_EVENTS_LOG_PATH)
-campaign_handler.setFormatter(custom_formatter)
-campaign_logger.addHandler(campaign_handler)
-
-# Set up the main logger for this module
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-# Remove all handlers to avoid duplicates
-for h in list(logger.handlers):
-    logger.removeHandler(h)
-main_handler = logging.FileHandler(CAMPAIGN_EVENTS_LOG_PATH)
-main_handler.setFormatter(custom_formatter)
-logger.addHandler(main_handler)
-# Optionally, add a console handler for development
-console_handler = logging.StreamHandler()
-console_handler.setFormatter(custom_formatter)
-logger.addHandler(console_handler)
-
-bp = Blueprint('traffic', __name__)
+campaign_logger = get_logger('Campaign')
 
 # Global variables
 TRAFFIC_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'traffic')
@@ -1790,4 +1745,3 @@ def download_events_log():
         return send_file(CAMPAIGN_EVENTS_LOG_PATH, as_attachment=True)
     except Exception as e:
         logger.error(f"Error sending campaign events log: {str(e)}", exc_info=True)
-        return jsonify({"error": "Failed to retrieve log file", "details": str(e)}), 500 
