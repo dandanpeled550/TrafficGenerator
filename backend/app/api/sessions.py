@@ -101,6 +101,7 @@ def create_session():
     """Create a new traffic session"""
     try:
         data = request.get_json()
+        logger.info(f"[Session] Create request received: {data}")
         if not data:
             return jsonify({"error": "No data provided"}), 400
 
@@ -159,10 +160,10 @@ def create_session():
         )
         new_session = ensure_datetime_fields(new_session)
         sessions[session_id] = new_session
-        logger.info(f"Created new session: {session_id}")
+        logger.info(f"[Session] Created: {new_session.to_dict()}")
         return jsonify(new_session.to_dict())
     except Exception as e:
-        logger.error(f"Error creating session: {str(e)}")
+        logger.error(f"[Session] Error creating: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @bp.route("/", methods=['GET'])
@@ -172,6 +173,7 @@ def list_sessions():
     import json
     from app.api.traffic import TRAFFIC_DATA_DIR
     try:
+        logger.info("[Session] List all request received")
         session_dicts = []
         for session in sessions.values():
             # Try to update total_requests and successful_requests from traffic file
@@ -191,30 +193,37 @@ def list_sessions():
                 session.total_requests = 0
                 session.successful_requests = 0
             session_dicts.append(session.to_dict())
+        logger.info(f"[Session] Listed all sessions: count={len(session_dicts)}")
         return jsonify(session_dicts)
     except Exception as e:
-        logger.error(f"Error listing sessions: {str(e)}")
+        logger.error(f"[Session] Error listing: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @bp.route("/<session_id>", methods=['GET'])
 def get_session(session_id: str):
     """Get a specific traffic session"""
     try:
+        logger.info(f"[Session] Get request received for: {session_id}")
         if session_id not in sessions:
+            logger.warning(f"[Session] Not found: {session_id}")
             return jsonify({"error": "Session not found"}), 404
+        logger.info(f"[Session] Fetched: {sessions[session_id].to_dict()}")
         return jsonify(sessions[session_id].to_dict())
     except Exception as e:
-        logger.error(f"Error getting session {session_id}: {str(e)}")
+        logger.error(f"[Session] Error getting: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @bp.route("/<session_id>", methods=['PUT'])
 def update_session(session_id: str):
     """Update a traffic session"""
     try:
+        logger.info(f"[Session] Update request received for: {session_id}")
         if session_id not in sessions:
+            logger.warning(f"[Session] Not found for update: {session_id}")
             return jsonify({"error": "Session not found"}), 404
             
         data = request.get_json()
+        logger.info(f"[Session] Update data: {data}")
         if not data:
             return jsonify({"error": "No data provided"}), 400
             
@@ -263,21 +272,23 @@ def update_session(session_id: str):
 
         session = ensure_datetime_fields(session)
         session.updated_at = datetime.utcnow()
-        logger.info(f"Updated session {session_id}")
+        logger.info(f"[Session] Updated: {session.to_dict()}")
         return jsonify(session.to_dict())
     except Exception as e:
-        logger.error(f"Error updating session {session_id}: {str(e)}")
+        logger.error(f"[Session] Error updating: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @bp.route("/<session_id>", methods=['DELETE'])
 def delete_session(session_id: str):
     """Delete a traffic session"""
     try:
+        logger.info(f"[Session] Delete request received for: {session_id}")
         if session_id not in sessions:
+            logger.warning(f"[Session] Not found for delete: {session_id}")
             return jsonify({"error": "Session not found"}), 404
         del sessions[session_id]
-        logger.info(f"Deleted session {session_id}")
+        logger.info(f"[Session] Deleted: {session_id}")
         return jsonify({"success": True, "message": f"Session {session_id} deleted"})
     except Exception as e:
-        logger.error(f"Error deleting session {session_id}: {str(e)}")
+        logger.error(f"[Session] Error deleting: {str(e)}")
         return jsonify({"error": str(e)}), 500 

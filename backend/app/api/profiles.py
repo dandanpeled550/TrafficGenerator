@@ -42,7 +42,7 @@ class UserProfile:
 def create_profile():
     try:
         data = request.get_json()
-        logger.info(f"Creating profile with data: {data}")
+        logger.info(f"[Profile] Create request received: {data}")
         
         profile_id = str(uuid.uuid4())
         profile = UserProfile(
@@ -55,41 +55,45 @@ def create_profile():
             rtb_specifics=data.get('rtb_specifics', {})
         )
         profiles[profile_id] = profile
-        logger.info(f"Created profile: {profile}")
+        logger.info(f"[Profile] Created: {profile}")
         return jsonify(profile.__dict__), 201
     except Exception as e:
-        logger.error(f"Error creating profile: {str(e)}")
+        logger.error(f"[Profile] Error creating: {str(e)}")
         return jsonify({"error": str(e)}), 400
 
 @bp.route('/', methods=['GET'])
 def get_profiles():
     try:
-        logger.info("Fetching all profiles")
-        return jsonify([profile.__dict__ for profile in profiles.values()])
+        logger.info("[Profile] Fetch all request received")
+        result = [profile.__dict__ for profile in profiles.values()]
+        logger.info(f"[Profile] Fetched all profiles: count={len(result)}")
+        return jsonify(result)
     except Exception as e:
-        logger.error(f"Error fetching profiles: {str(e)}")
+        logger.error(f"[Profile] Error fetching all: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/<profile_id>', methods=['GET'])
 def get_profile(profile_id):
     try:
-        logger.info(f"Fetching profile: {profile_id}")
+        logger.info(f"[Profile] Fetch request received for: {profile_id}")
         if profile_id not in profiles:
+            logger.warning(f"[Profile] Not found: {profile_id}")
             return jsonify({"error": "Profile not found"}), 404
+        logger.info(f"[Profile] Fetched: {profiles[profile_id]}")
         return jsonify(profiles[profile_id].__dict__)
     except Exception as e:
-        logger.error(f"Error fetching profile: {str(e)}")
+        logger.error(f"[Profile] Error fetching: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/<profile_id>', methods=['PUT'])
 def update_profile(profile_id):
     try:
+        logger.info(f"[Profile] Update request received for: {profile_id}")
         if profile_id not in profiles:
+            logger.warning(f"[Profile] Not found for update: {profile_id}")
             return jsonify({"error": "Profile not found"}), 404
-        
         data = request.get_json()
-        logger.info(f"Updating profile {profile_id} with data: {data}")
-        
+        logger.info(f"[Profile] Update data: {data}")
         profile = profiles[profile_id]
         profile.name = data.get('name', profile.name)
         profile.description = data.get('description', profile.description)
@@ -98,22 +102,22 @@ def update_profile(profile_id):
         profile.app_usage = data.get('app_usage', profile.app_usage)
         profile.rtb_specifics = data.get('rtb_specifics', profile.rtb_specifics)
         profile.updated_at = str(uuid.uuid4())
-        
-        logger.info(f"Updated profile: {profile}")
+        logger.info(f"[Profile] Updated: {profile}")
         return jsonify(profile.__dict__)
     except Exception as e:
-        logger.error(f"Error updating profile: {str(e)}")
+        logger.error(f"[Profile] Error updating: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 @bp.route('/<profile_id>', methods=['DELETE'])
 def delete_profile(profile_id):
     try:
-        logger.info(f"Deleting profile: {profile_id}")
+        logger.info(f"[Profile] Delete request received for: {profile_id}")
         if profile_id not in profiles:
+            logger.warning(f"[Profile] Not found for delete: {profile_id}")
             return jsonify({"error": "Profile not found"}), 404
-        
         del profiles[profile_id]
+        logger.info(f"[Profile] Deleted: {profile_id}")
         return jsonify({"message": "Profile deleted successfully"})
     except Exception as e:
-        logger.error(f"Error deleting profile: {str(e)}")
+        logger.error(f"[Profile] Error deleting: {str(e)}")
         return jsonify({"error": str(e)}), 500 
