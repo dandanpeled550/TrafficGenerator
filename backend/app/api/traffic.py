@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from .logging_config import get_logger
 import uuid
+from app.api.sessions import sessions
 
 # Define the Blueprint before any route decorators
 bp = Blueprint('traffic', __name__)
@@ -1580,6 +1581,7 @@ def test_traffic_functions():
 @bp.route("/campaigns/<campaign_id>/status", methods=['PUT'])
 def update_campaign_status_endpoint(campaign_id: str):
     """Update campaign status and manage transitions"""
+    from app.api.sessions import sessions
     try:
         data = request.get_json()
         if not data:
@@ -1663,6 +1665,7 @@ def update_campaign_status_endpoint(campaign_id: str):
 @bp.route("/campaigns/<campaign_id>/info", methods=['GET'])
 def get_campaign_info(campaign_id: str):
     """Get comprehensive campaign information including status and traffic generation state"""
+    from app.api.sessions import sessions
     try:
         # Check if campaign exists
         if campaign_id not in sessions:
