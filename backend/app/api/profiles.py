@@ -3,9 +3,9 @@ from typing import List, Optional, Dict
 from datetime import datetime
 from dataclasses import dataclass, field
 import uuid
-import logging
+from .logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger('Profile')
 
 bp = Blueprint('profiles', __name__)
 
