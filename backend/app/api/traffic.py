@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from .logging_config import get_logger
 import uuid
-from app.api.sessions import sessions  # Import sessions storage
 
 # Configure logging
 logger = get_logger('Traffic')
@@ -334,6 +333,7 @@ def generate_traffic_background(config: TrafficConfig):
 
 @bp.route("/generate", methods=['POST'])
 def generate_traffic():
+    from app.api.sessions import sessions
     try:
         data = request.get_json()
         if not data:
