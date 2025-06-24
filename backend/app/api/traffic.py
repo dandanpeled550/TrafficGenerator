@@ -10,6 +10,9 @@ from dataclasses import dataclass, field
 from .logging_config import get_logger
 import uuid
 
+# Define the Blueprint before any route decorators
+bp = Blueprint('traffic', __name__)
+
 # Configure logging
 logger = get_logger('Traffic')
 
