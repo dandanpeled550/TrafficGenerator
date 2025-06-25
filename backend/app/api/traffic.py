@@ -880,36 +880,77 @@ def get_campaign_stats(campaign_id: str):
             }), 404
         with open(traffic_file, 'r') as f:
             traffic_data = json.load(f)
-        # Calculate statistics
         total_requests = len(traffic_data)
         successful_requests = sum(1 for entry in traffic_data if entry.get('success', False))
         success_rate = (successful_requests / total_requests * 100) if total_requests > 0 else 0
-        # Get unique values
-        unique_geo = set(entry.get('geo_location') for entry in traffic_data if entry.get('geo_location'))
-        unique_devices = set(entry.get('device_model') for entry in traffic_data if entry.get('device_model'))
-        unique_formats = set(entry.get('ad_format') for entry in traffic_data if entry.get('ad_format'))
+        # Extract unique ADIDs, device models, geo locations, ad formats from nested RTB data
+        unique_adids = set()
+        unique_devices = set()
+        unique_geo = set()
+        unique_ad_formats = set()
+        for entry in traffic_data:
+            rtb = entry.get('rtb_data', {})
+            # ADID/user.id
+            user = rtb.get('user', {})
+            adid = user.get('id')
+            if adid:
+                unique_adids.add(adid)
+            # Device model
+            device = rtb.get('device', {})
+            model = device.get('model') or device.get('device_model') or device.get('model_name')
+            if model:
+                unique_devices.add(model)
+            # Geo locations (flatten list if present)
+            geo = entry.get('geo_locations')
+            if isinstance(geo, list):
+                unique_geo.update(geo)
+            elif isinstance(geo, str):
+                unique_geo.add(geo)
+            # Ad formats (from imp section)
+            imp = rtb.get('imp')
+            if isinstance(imp, list) and imp:
+                banner = imp[0].get('banner', {})
+                ad_format = banner.get('ad_format') or banner.get('format')
+                if ad_format:
+                    unique_ad_formats.add(ad_format)
         # Time-based statistics
         timestamps = [entry.get('timestamp') for entry in traffic_data if entry.get('timestamp')]
         if timestamps:
             start_time = min(timestamps)
-            end_time = max(timestamps)
-            duration_minutes = (datetime.fromisoformat(end_time) - datetime.fromisoformat(start_time)).total_seconds() / 60
-            requests_per_minute = total_requests / duration_minutes if duration_minutes > 0 else 0
+            actual_end_time = max(timestamps)
         else:
             start_time = None
-            end_time = None
-            duration_minutes = 0
+            actual_end_time = None
+        # Planned end time: start_time + duration_minutes
+        duration_minutes = None
+        if traffic_data and 'duration_minutes' in traffic_data[0]:
+            duration_minutes = traffic_data[0]['duration_minutes']
+        else:
+            from app.api.sessions import sessions
+            if campaign_id in sessions:
+                duration_minutes = getattr(sessions[campaign_id], 'duration_minutes', None)
+        if start_time and duration_minutes:
+            planned_end_time = (datetime.fromisoformat(start_time) + timedelta(minutes=duration_minutes)).isoformat()
+        else:
+            planned_end_time = None
+        if timestamps and start_time:
+            duration_minutes_actual = (datetime.fromisoformat(actual_end_time) - datetime.fromisoformat(start_time)).total_seconds() / 60
+            requests_per_minute = total_requests / duration_minutes_actual if duration_minutes_actual > 0 else 0
+        else:
+            duration_minutes_actual = 0
             requests_per_minute = 0
         stats = {
             "total_requests": total_requests,
             "successful_requests": successful_requests,
             "success_rate": round(success_rate, 2),
-            "unique_geo_locations": len(unique_geo),
-            "unique_device_models": len(unique_devices),
-            "unique_ad_formats": len(unique_formats),
+            "unique_adids": list(unique_adids),
+            "unique_device_models": list(unique_devices),
+            "unique_geo_locations": list(unique_geo),
+            "unique_ad_formats": list(unique_ad_formats),
             "start_time": start_time,
-            "end_time": end_time,
-            "duration_minutes": round(duration_minutes, 2),
+            "planned_end_time": planned_end_time,
+            "actual_end_time": actual_end_time,
+            "duration_minutes_actual": round(duration_minutes_actual, 2),
             "requests_per_minute": round(requests_per_minute, 2)
         }
         logger.debug(f"Calculated stats for campaign {campaign_id}: {stats}")
