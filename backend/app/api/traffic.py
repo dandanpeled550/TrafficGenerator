@@ -871,28 +871,23 @@ def get_campaign_stats(campaign_id: str):
     """Get statistics for a specific campaign"""
     try:
         logger.info(f"Getting stats for campaign {campaign_id}")
-        traffic_file = os.path.join(TRAFFIC_DATA_DIR, f'{campaign_id}.json')
-        
+        traffic_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
         if not os.path.exists(traffic_file):
             logger.warning(f"No traffic data found for campaign {campaign_id}")
             return jsonify({
                 "success": False,
                 "message": "No traffic data found for campaign"
             }), 404
-            
         with open(traffic_file, 'r') as f:
             traffic_data = json.load(f)
-            
         # Calculate statistics
         total_requests = len(traffic_data)
         successful_requests = sum(1 for entry in traffic_data if entry.get('success', False))
         success_rate = (successful_requests / total_requests * 100) if total_requests > 0 else 0
-        
         # Get unique values
         unique_geo = set(entry.get('geo_location') for entry in traffic_data if entry.get('geo_location'))
         unique_devices = set(entry.get('device_model') for entry in traffic_data if entry.get('device_model'))
         unique_formats = set(entry.get('ad_format') for entry in traffic_data if entry.get('ad_format'))
-        
         # Time-based statistics
         timestamps = [entry.get('timestamp') for entry in traffic_data if entry.get('timestamp')]
         if timestamps:
@@ -905,7 +900,6 @@ def get_campaign_stats(campaign_id: str):
             end_time = None
             duration_minutes = 0
             requests_per_minute = 0
-            
         stats = {
             "total_requests": total_requests,
             "successful_requests": successful_requests,
@@ -918,7 +912,6 @@ def get_campaign_stats(campaign_id: str):
             "duration_minutes": round(duration_minutes, 2),
             "requests_per_minute": round(requests_per_minute, 2)
         }
-        
         logger.debug(f"Calculated stats for campaign {campaign_id}: {stats}")
         return jsonify({
             "success": True,
