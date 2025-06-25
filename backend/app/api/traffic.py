@@ -1,6 +1,6 @@
 import os
 import json
-from flask import Blueprint, request, jsonify, send_file, abort
+from flask import Blueprint, request, jsonify, send_file, abort, current_app
 from typing import List, Optional, Dict, Any
 import threading
 import random
@@ -13,6 +13,7 @@ from app.api.sessions import sessions
 from app.api.profiles import profiles
 from faker import Faker
 import string
+from sqlalchemy import create_engine, text
 
 # Define the Blueprint before any route decorators
 bp = Blueprint('traffic', __name__)
@@ -51,6 +52,12 @@ thread_locks = {}
 
 # Global dict to store ADIDs per campaign/profile
 campaign_adids = {}
+
+# Set up SQLAlchemy engine for test
+DATABASE_URL = os.environ.get('DATABASE_URL')
+db_engine = None
+if DATABASE_URL:
+    db_engine = create_engine(DATABASE_URL)
 
 def append_campaign_log(campaign_id, message):
     """Append a detailed log message to the campaign's log file."""
@@ -1827,3 +1834,25 @@ def get_campaign_adids(campaign_id: str):
             "success": False,
             "error": f"Error getting ADIDs: {str(e)}"
         }), 500
+
+@bp.route('/db-test', methods=['GET'])
+def db_test():
+    """Test DB connection and write a log entry."""
+    if not db_engine:
+        logger.error("[DB Test] DATABASE_URL not set or engine not initialized.")
+        return jsonify({"success": False, "error": "DATABASE_URL not set or engine not initialized."}), 500
+    try:
+        with db_engine.connect() as conn:
+            # Create table if not exists
+            conn.execute(text('''CREATE TABLE IF NOT EXISTS test_log (
+                id SERIAL PRIMARY KEY,
+                message TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )'''))
+            # Insert a test log
+            conn.execute(text("INSERT INTO test_log (message) VALUES (:msg)"), {"msg": "DB test successful"})
+            logger.info("[DB Test] Successfully wrote to test_log table.")
+        return jsonify({"success": True, "message": "Successfully wrote to test_log table."})
+    except Exception as e:
+        logger.error(f"[DB Test] Error: {str(e)}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
