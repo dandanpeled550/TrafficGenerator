@@ -11,6 +11,8 @@ from .logging_config import get_logger
 import uuid
 from app.api.sessions import sessions
 from app.api.profiles import profiles
+from faker import Faker
+import string
 
 # Define the Blueprint before any route decorators
 bp = Blueprint('traffic', __name__)
@@ -46,6 +48,9 @@ except Exception as e:
 # Add after other global variables
 active_threads = {}
 thread_locks = {}
+
+# Global dict to store ADIDs per campaign/profile
+campaign_adids = {}
 
 def append_campaign_log(campaign_id, message):
     """Append a detailed log message to the campaign's log file."""
@@ -169,6 +174,7 @@ class TrafficConfig:
 
 def generate_traffic_background(config: TrafficConfig, thread_id: str):
     """Generate traffic in the background"""
+    global campaign_adids
     try:
         campaign_logger.info(f"[Session {config.campaign_id}] Traffic generation started.")
         append_campaign_log(config.campaign_id, f"START: Traffic generation started for campaign {config.campaign_id} at {datetime.utcnow().isoformat()}")
@@ -228,6 +234,14 @@ def generate_traffic_background(config: TrafficConfig, thread_id: str):
             "thread_id": thread_id,
             "traffic_generation_active": True
         })
+
+        # Generate ADIDs for each profile in the campaign if not already present
+        if config.campaign_id not in campaign_adids:
+            campaign_adids[config.campaign_id] = {}
+        for pid in config.user_profile_ids:
+            user_count = config.profile_user_counts.get(pid, 0)
+            if user_count > 0 and pid not in campaign_adids[config.campaign_id]:
+                campaign_adids[config.campaign_id][pid] = [generate_adid() for _ in range(user_count)]
 
         # Main traffic generation loop with improved error handling
         while True:
@@ -512,14 +526,74 @@ def generate_traffic():
         logger.error(f"[API] {error_msg}", exc_info=True)
         return jsonify({"error": error_msg}), 500
 
+def generate_rtb_data(rtb_config: Optional[Dict[str, Any]], config: Optional[TrafficConfig] = None) -> Dict[str, Any]:
+    fake = Faker()
+    if not rtb_config:
+        return None
+    try:
+        # Pick a profile for this request
+        user_id = None
+        adid = None
+        profile_id = None
+        if config and config.user_profile_ids:
+            # Weighted random pick based on profile_user_counts
+            weighted_profiles = []
+            for pid in config.user_profile_ids:
+                count = config.profile_user_counts.get(pid, 0)
+                weighted_profiles.extend([pid] * count)
+            if weighted_profiles:
+                profile_id = random.choice(weighted_profiles)
+                # Pick an ADID for this profile
+                adid_list = campaign_adids.get(config.campaign_id, {}).get(profile_id, [])
+                if adid_list:
+                    adid = random.choice(adid_list)
+                    user_id = adid
+        # --- imp section ---
+        imp = [{
+            "id": "1",
+            "banner": {
+                "w": rtb_config.get("banner_w", 300),
+                "h": rtb_config.get("banner_h", 250)
+            },
+            "bidfloor": rtb_config.get("bidfloor", 0.03),
+            "bidfloorcur": rtb_config.get("bidfloorcur", "USD")
+        }]
+        # --- site section ---
+        site = {
+            "id": rtb_config.get("site_id", "site123"),
+            "name": rtb_config.get("site_name", "Example Site"),
+            "domain": rtb_config.get("site_domain", "example.com")
+        }
+        # --- device section ---
+        device = {
+            "ua": rtb_config.get("ua", fake.user_agent()),
+            "ip": rtb_config.get("ip", fake.ipv4())
+        }
+        # --- user section ---
+        user = {
+            "id": user_id or rtb_config.get("user_id", "user123")
+        }
+        # --- top-level fields ---
+        rtb_data = {
+            "id": ''.join(random.choices(string.digits, k=10)),
+            "imp": imp,
+            "site": site,
+            "device": device,
+            "user": user,
+            "at": rtb_config.get("at", 2),
+            "tmax": rtb_config.get("tmax", 120),
+            "cur": rtb_config.get("cur", ["USD"])
+        }
+        return rtb_data
+    except Exception as e:
+        logger.error(f"Error generating RTB data: {str(e)}", exc_info=True)
+        return {}
+
 def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
     """Generate a single traffic data entry with improved validation"""
     try:
-        # Validate config
         if not isinstance(config, TrafficConfig):
             raise ValueError("Invalid config type")
-        
-        # Generate base traffic data with validation
         traffic_data = {
             "id": str(int(time.time() * 1000)),
             "timestamp": datetime.utcnow().isoformat(),
@@ -534,84 +608,22 @@ def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
             "profile_user_counts": config.profile_user_counts,
             "total_profile_users": config.total_profile_users
         }
-        
-        # Validate required fields
         required_fields = ["id", "timestamp", "campaign_id", "target_url"]
         for field in required_fields:
             if not traffic_data.get(field):
                 raise ValueError(f"Missing required field: {field}")
-        
-        # Add RTB data with validation
+        # Add RTB data in OpenRTB format
         if config.rtb_config:
-            rtb_data = generate_rtb_data(config.rtb_config)
+            rtb_data = generate_rtb_data(config.rtb_config, config)
             if rtb_data:
                 traffic_data["rtb_data"] = rtb_data
-        
+            else:
+                logger.warning("RTB data could not be generated, using empty object.")
+                traffic_data["rtb_data"] = {}
         return traffic_data
     except Exception as e:
         logger.error(f"Error generating traffic data: {str(e)}", exc_info=True)
         raise
-
-def generate_rtb_data(rtb_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    """Generate RTB data if RTB configuration is provided"""
-    if not rtb_config:
-        return None
-    
-    # Default values for RTB configuration
-    default_device_models = ["Galaxy S24", "iPhone 15", "Pixel 8"]
-    default_ad_formats = ["banner", "interstitial", "native"]
-    default_app_categories = ["IAB9", "IAB1", "IAB2"]
-    
-    try:
-        # Validate RTB configuration
-        if not isinstance(rtb_config, dict):
-            logger.warning("Invalid RTB config type, using defaults")
-            rtb_config = {}
-        
-        # Get values from config with defaults
-        device_models = rtb_config.get("device_models", default_device_models)
-        ad_formats = rtb_config.get("ad_formats", default_ad_formats)
-        app_categories = rtb_config.get("app_categories", default_app_categories)
-        
-        # Ensure lists are not empty and contain valid values
-        if not isinstance(device_models, list) or not device_models:
-            logger.warning("Invalid device_models list, using defaults")
-            device_models = default_device_models
-        if not isinstance(ad_formats, list) or not ad_formats:
-            logger.warning("Invalid ad_formats list, using defaults")
-            ad_formats = default_ad_formats
-        if not isinstance(app_categories, list) or not app_categories:
-            logger.warning("Invalid app_categories list, using defaults")
-            app_categories = default_app_categories
-            
-        # Validate device brand
-        device_brand = rtb_config.get("device_brand", "samsung")
-        if not isinstance(device_brand, str):
-            logger.warning("Invalid device_brand, using default")
-            device_brand = "samsung"
-            
-        # Generate RTB data
-        rtb_data = {
-            "device_brand": device_brand,
-            "device_model": random.choice(device_models),
-            "ad_format": random.choice(ad_formats),
-            "app_category": random.choice(app_categories),
-            "adid": generate_adid() if rtb_config.get("generate_adid", True) else None
-        }
-        
-        logger.debug(f"Generated RTB data: {json.dumps(rtb_data, indent=2)}")
-        return rtb_data
-        
-    except Exception as e:
-        logger.error(f"Error generating RTB data: {str(e)}", exc_info=True)
-        # Return default RTB data in case of error
-        return {
-            "device_brand": "samsung",
-            "device_model": random.choice(default_device_models),
-            "ad_format": random.choice(default_ad_formats),
-            "app_category": random.choice(default_app_categories),
-            "adid": generate_adid()
-        }
 
 def generate_adid() -> str:
     """Generate a random advertising ID"""
@@ -1759,3 +1771,25 @@ def download_events_log():
         return send_file(CAMPAIGN_EVENTS_LOG_PATH, as_attachment=True)
     except Exception as e:
         logger.error(f"Error sending campaign events log: {str(e)}", exc_info=True)
+
+@bp.route("/campaigns/<campaign_id>/adids", methods=["GET"])
+def get_campaign_adids(campaign_id: str):
+    """Get the ADID lists for each profile in a campaign."""
+    try:
+        if campaign_id not in campaign_adids:
+            logger.warning(f"[API] No ADIDs found for campaign {campaign_id}")
+            return jsonify({
+                "success": False,
+                "error": f"No ADIDs found for campaign {campaign_id}"
+            }), 404
+        return jsonify({
+            "success": True,
+            "campaign_id": campaign_id,
+            "adids": campaign_adids[campaign_id]
+        })
+    except Exception as e:
+        logger.error(f"[API] Error getting ADIDs for campaign {campaign_id}: {str(e)}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "error": f"Error getting ADIDs: {str(e)}"
+        }), 500
