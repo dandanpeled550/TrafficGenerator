@@ -14,6 +14,8 @@ from app.api.profiles import profiles
 from faker import Faker
 import string
 from sqlalchemy import create_engine, text
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 # Define the Blueprint before any route decorators
 bp = Blueprint('traffic', __name__)
@@ -1855,4 +1857,32 @@ def db_test():
         return jsonify({"success": True, "message": "Successfully wrote to test_log table."})
     except Exception as e:
         logger.error(f"[DB Test] Error: {str(e)}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@bp.route('/psycopg2-test', methods=['GET'])
+def psycopg2_test():
+    """Test Postgres connection and write a log entry using psycopg2."""
+    import os
+    db_url = os.environ.get('DATABASE_URL')
+    if not db_url:
+        logger.error("[psycopg2 Test] DATABASE_URL not set.")
+        return jsonify({"success": False, "error": "DATABASE_URL not set."}), 500
+    try:
+        conn = psycopg2.connect(db_url, cursor_factory=RealDictCursor)
+        cur = conn.cursor()
+        # Create table if not exists
+        cur.execute('''CREATE TABLE IF NOT EXISTS test_log (
+            id SERIAL PRIMARY KEY,
+            message TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
+        # Insert a test log
+        cur.execute("INSERT INTO test_log (message) VALUES (%s)", ("psycopg2 test successful",))
+        conn.commit()
+        cur.close()
+        conn.close()
+        logger.info("[psycopg2 Test] Successfully wrote to test_log table.")
+        return jsonify({"success": True, "message": "Successfully wrote to test_log table using psycopg2."})
+    except Exception as e:
+        logger.error(f"[psycopg2 Test] Error: {str(e)}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
