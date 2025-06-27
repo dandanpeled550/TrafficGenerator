@@ -2,12 +2,15 @@ services:
   - type: web
     name: TrafficGenerator
     env: python
-    rootDir: backend/app
     buildCommand: |
+      cd backend
       pip install -r requirements.txt
     startCommand: |
+      cd backend
       FLASK_APP=app.main flask run --host 0.0.0.0 --port $PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.4
       - key: ENVIRONMENT
         value: production
       - key: CORS_ORIGINS
