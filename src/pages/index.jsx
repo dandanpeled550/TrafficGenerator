@@ -10,6 +10,8 @@ import UserProfiles from "./UserProfiles";
 
 import Campaigns from "./Campaigns";
 
+import CampaignDetail from "./CampaignDetail";
+
 import Logs from "./Logs";
 
 import { BrowserRouter as Router, Route, Routes, useLocation } from 'react-router-dom';
@@ -64,6 +66,8 @@ function PagesContent() {
                 <Route path="/UserProfiles" element={<UserProfiles />} />
                 
                 <Route path="/Campaigns" element={<Campaigns />} />
+                
+                <Route path="/campaign/:campaignId" element={<CampaignDetail />} />
                 
                 <Route path="/Logs" element={<Logs />} />
                 

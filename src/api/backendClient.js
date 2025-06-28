@@ -209,6 +209,24 @@ const backendClient = {
         console.error('Error testing traffic functions:', error);
         throw error;
       }
+    },
+    generateSample: async (formData) => {
+      try {
+        console.log('Generating sample traffic data:', formData);
+        const response = await fetch(`${API_BASE_URL}/api/traffic/test`, {
+          method: 'POST',
+          headers: defaultHeaders,
+          credentials: "include",
+          body: JSON.stringify({ 
+            test_type: "generate_traffic_data",
+            config: formData 
+          }),
+        });
+        return await handleResponse(response);
+      } catch (error) {
+        console.error('Error generating sample traffic data:', error);
+        throw error;
+      }
     }
   },
 

@@ -5,39 +5,24 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Progress } from "@/components/ui/progress";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link, useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { formatDistanceToNow } from "date-fns";
-import DirectTrafficInjector from "../components/campaigns/DirectTrafficInjector"; 
 import {
   Search,
   Filter,
-  Edit3,
   Play,
-  Pause,
   Square,
   Trash2,
   Plus,
-  Globe,
-  Users,
-  Clock,
-  MoreVertical,
-  Infinity,
-  Download,
   RefreshCw,
-  Wand2,
+  Activity,
+  Eye,
+  Globe,
   CheckCircle,
   XCircle,
-  Activity,
 } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -47,8 +32,9 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
-const CampaignCard = ({ campaign, onDelete, onStatusChange, allProfiles }) => {
-  const [error, setError] = useState(null);
+const CampaignCard = ({ campaign, onDelete, onStatusChange }) => {
+  const [isStarting, setIsStarting] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -67,106 +53,124 @@ const CampaignCard = ({ campaign, onDelete, onStatusChange, allProfiles }) => {
     }
   };
 
-  const getProfileNames = (profileIds) => {
-    if (!profileIds || !profileIds.length) return "No profiles selected";
-    return profileIds
-      .map(id => {
-        const profile = allProfiles.find(p => p.id === id);
-        return profile ? profile.name : `Unknown Profile (${id})`;
-      })
-      .join(", ");
+  const handleStartCampaign = async () => {
+    setIsStarting(true);
+    try {
+      await backendClient.traffic.updateCampaignStatus(campaign.id, 'running');
+      onStatusChange(campaign.id, 'running');
+    } catch (error) {
+      console.error('Error starting campaign:', error);
+    }
+    setIsStarting(false);
   };
 
-  const stopTrafficGeneration = async () => {
+  const handleStopCampaign = async () => {
+    setIsStopping(true);
     try {
-      // Stop traffic generation first
       await backendClient.traffic.stop(campaign.id);
-      
-      // Then update campaign status to 'stopped'
       await backendClient.traffic.updateCampaignStatus(campaign.id, 'stopped');
-      
       onStatusChange(campaign.id, 'stopped');
     } catch (error) {
-      console.error(`[Injector] Error stopping traffic generation:`, error);
-      setError(`Failed to stop traffic generation: ${error.message}`);
+      console.error('Error stopping campaign:', error);
     }
+    setIsStopping(false);
   };
 
+  const totalRequests = campaign.total_requests || 0;
+  const successfulRequests = campaign.successful_requests || 0;
+  const successRate = totalRequests > 0 ? (successfulRequests / totalRequests) * 100 : 0;
+
   return (
-    <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
+    <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm hover:bg-slate-900/70 transition-colors">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
         <div className="flex items-center gap-2">
           <CardTitle className="text-lg font-semibold text-white">
             {campaign.name}
           </CardTitle>
-          {/* Delete Button */}
+          {campaign.status === 'running' && (
+            <span className="px-2 py-0.5 bg-green-600/20 text-green-400 text-xs rounded-full animate-pulse">Live</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge className={getStatusColor(campaign.status)}>
+            {campaign.status}
+          </Badge>
           <Button
             variant="ghost"
             size="icon"
             onClick={onDelete}
-            className="text-red-400 hover:bg-red-900/20 hover:text-red-500 ml-2"
+            className="text-red-400 hover:bg-red-900/20 hover:text-red-500"
             title="Delete Campaign"
           >
-            <Trash2 className="w-5 h-5" />
+            <Trash2 className="w-4 h-4" />
           </Button>
-          {campaign.status === 'running' && (
-            <span className="ml-2 px-2 py-0.5 bg-green-600/20 text-green-400 text-xs rounded-full animate-pulse">Live</span>
-          )}
         </div>
-        <Badge className={getStatusColor(campaign.status)}>
-          {campaign.status}
-        </Badge>
       </CardHeader>
       <CardContent>
-        {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
-            <p className="text-red-400 text-sm">{error}</p>
-          </div>
-        )}
-
         <div className="space-y-4">
-          {/* Campaign Info */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1">
-              <p className="text-sm text-slate-400">Target URL</p>
-              <p className="text-white truncate">{campaign.target_url}</p>
+          {/* Campaign URL */}
+          <div className="flex items-center gap-2">
+            <Globe className="w-4 h-4 text-slate-400" />
+            <p className="text-white truncate">{campaign.target_url}</p>
+          </div>
+
+          {/* Key Stats */}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="text-center">
+              <p className="text-2xl font-bold text-white">{totalRequests.toLocaleString()}</p>
+              <p className="text-sm text-slate-400">Requests</p>
             </div>
-            <div className="space-y-1">
-              <p className="text-sm text-slate-400">Profiles</p>
-              <p className="text-white">{getProfileNames(campaign.user_profile_ids)}</p>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-white">{successRate.toFixed(1)}%</p>
+              <p className="text-sm text-slate-400">Success Rate</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-white">{successfulRequests.toLocaleString()}</p>
+              <p className="text-sm text-slate-400">Successful</p>
             </div>
           </div>
 
-          {/* Live Stats for Running Campaigns */}
-          {campaign.status === 'running' && campaign.liveStats && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
-              <div className="bg-slate-800/50 p-3 rounded-lg">
-                <p className="text-slate-400 text-sm">Total Requests</p>
-                <p className="text-white text-xl font-semibold">{campaign.liveStats.total_requests}</p>
-              </div>
-              <div className="bg-slate-800/50 p-3 rounded-lg">
-                <p className="text-slate-400 text-sm">Success Rate</p>
-                <p className="text-white text-xl font-semibold">{campaign.liveStats.success_rate?.toFixed(2)}%</p>
-              </div>
-              <div className="bg-slate-800/50 p-3 rounded-lg">
-                <p className="text-slate-400 text-sm">Requests/Min</p>
-                <p className="text-white text-xl font-semibold">{campaign.liveStats.requests_per_minute?.toFixed(2)}</p>
-              </div>
-              <div className="bg-slate-800/50 p-3 rounded-lg">
-                <p className="text-slate-400 text-sm">Duration (min)</p>
-                <p className="text-white text-xl font-semibold">{campaign.liveStats.duration_minutes}</p>
-              </div>
-            </div>
-          )}
-
-          {/* DirectTrafficInjector will handle its own buttons and display now */}
-          <DirectTrafficInjector 
-            campaign={campaign} 
-            onUpdate={() => onStatusChange(campaign.id, campaign.status)}
-          />
-
-          {/* The rest of the CampaignCard content will remain here, excluding the duplicated elements now handled by DirectTrafficInjector */}
-
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2">
+            <Link to={`/campaign/${campaign.id}`}>
+              <Button variant="outline" size="sm" className="border-slate-700 hover:bg-slate-800">
+                <Eye className="w-4 h-4 mr-2" />
+                View Details
+              </Button>
+            </Link>
+            
+            {campaign.status === 'draft' && (
+              <Button 
+                size="sm" 
+                onClick={handleStartCampaign}
+                disabled={isStarting}
+                className="bg-green-600 hover:bg-green-700"
+              >
+                {isStarting ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                ) : (
+                  <Play className="w-4 h-4 mr-2" />
+                )}
+                Start
+              </Button>
+            )}
+            
+            {campaign.status === 'running' && (
+              <Button 
+                size="sm" 
+                onClick={handleStopCampaign}
+                disabled={isStopping}
+                variant="destructive"
+              >
+                {isStopping ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                ) : (
+                  <Square className="w-4 h-4 mr-2" />
+                )}
+                Stop
+              </Button>
+            )}
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -182,50 +186,27 @@ export default function CampaignsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [campaignToDelete, setCampaignToDelete] = useState(null);
   const [lastRefreshed, setLastRefreshed] = useState(null);
-  const [allProfiles, setAllProfiles] = useState([]);
   const pollingIntervalRef = useRef(null);
 
-  // Helper to fetch stats for running campaigns
-  const fetchCampaignStats = useCallback(async (campaignList) => {
-    const updatedCampaigns = await Promise.all(
-      campaignList.map(async (campaign) => {
-        if (campaign.status === 'running') {
-          try {
-            const statsResp = await backendClient.traffic.getStats(campaign.id);
-            if (statsResp && statsResp.data) {
-              return { ...campaign, liveStats: statsResp.data };
-            }
-          } catch (e) {
-            // Ignore stats fetch errors, just show campaign as is
-          }
-        }
-        return { ...campaign };
-      })
-    );
-    return updatedCampaigns;
-  }, []);
-
-  // Main data loader with stats
+  // Main data loader
   const loadData = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setIsLoading(true);
     try {
       const campaignsData = await backendClient.sessions.list();
-      const campaignsWithStats = await fetchCampaignStats(campaignsData);
-      setCampaigns(campaignsWithStats);
+      setCampaigns(campaignsData);
     } catch (error) {
       console.error("Failed to load data:", error);
     }
     if (!isRefresh) setIsLoading(false);
     setLastRefreshed(new Date());
-  }, [fetchCampaignStats]);
+  }, []);
 
-  // Initial load and profiles
+  // Initial load
   useEffect(() => {
     loadData();
-    backendClient.profiles.list().then(setAllProfiles).catch(console.error);
   }, [loadData]);
 
-  // Robust polling for running campaigns
+  // Polling for running campaigns
   useEffect(() => {
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
@@ -264,34 +245,6 @@ export default function CampaignsPage() {
     setCampaignToDelete(null);
   };
 
-  const handleDownloadLogs = (filePath) => {
-    if (!filePath) return;
-    window.open(`${import.meta.env.VITE_API_URL}/api/logs/${filePath}`, '_blank');
-  };
-
-  const handleDownloadTraffic = async (campaignId) => {
-    try {
-      const trafficDataResponse = await backendClient.traffic.getGenerated(campaignId);
-      const trafficData = trafficDataResponse.data || [];
-      if (trafficData.length === 0) {
-        console.log("No traffic data to download for this campaign.");
-        return;
-      }
-      const dataStr = JSON.stringify(trafficData, null, 2);
-      const blob = new Blob([dataStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `traffic_${campaignId}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Failed to download traffic data:", error);
-    }
-  };
-
   const confirmDelete = (campaign) => {
     setCampaignToDelete(campaign);
     setShowDeleteConfirm(true);
@@ -314,8 +267,8 @@ export default function CampaignsPage() {
           className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4"
         >
           <div>
-            <h1 className="text-4xl font-bold text-white mb-2">Campaign Management</h1>
-            <p className="text-slate-400 text-lg">View, edit, and manage all your RTB traffic campaigns</p>
+            <h1 className="text-4xl font-bold text-white mb-2">Campaigns</h1>
+            <p className="text-slate-400 text-lg">Manage your traffic campaigns</p>
           </div>
           <div className="flex items-center gap-3">
             {lastRefreshed && (
@@ -396,7 +349,7 @@ export default function CampaignsPage() {
             <p className="text-slate-400 mb-6">
               {searchTerm || statusFilter !== "all" 
                 ? "Try adjusting your search or filter criteria" 
-                : "Get started by creating your first RTB campaign"}
+                : "Get started by creating your first campaign"}
             </p>
             {!searchTerm && statusFilter === "all" && (
               <Link to={createPageUrl("Generator")}>
@@ -408,44 +361,23 @@ export default function CampaignsPage() {
             )}
           </motion.div>
         ) : (
-          <div className="grid gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <AnimatePresence>
-              {filteredCampaigns.map((campaign, index) => {
-                const totalRequests = campaign.total_requests || 0;
-                const successfulRequests = campaign.successful_requests || 0;
-                const failedRequests = totalRequests - successfulRequests;
-                const successRate = totalRequests > 0 
-                  ? (successfulRequests / totalRequests) * 100 
-                  : 0;
-
-                const needsTrafficInjection = (campaign.status === 'running' || campaign.status === 'draft') && totalRequests === 0;
-
-                return (
+              {filteredCampaigns.map((campaign, index) => (
                 <motion.div
                   key={campaign.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
                   transition={{ delay: index * 0.05 }}
-                  className="space-y-4"
                 >
-                  {/* Show either DirectTrafficInjector or CampaignCard, not both */}
-                  {needsTrafficInjection ? (
-                    <DirectTrafficInjector 
-                      campaign={campaign} 
-                      onUpdate={() => onStatusChange(campaign.id, campaign.status)}
-                    />
-                  ) : (
-                    <CampaignCard
-                      campaign={campaign}
-                      onDelete={() => confirmDelete(campaign)}
-                      onStatusChange={handleStatusChange}
-                      allProfiles={allProfiles}
-                    />
-                  )}
+                  <CampaignCard
+                    campaign={campaign}
+                    onDelete={() => confirmDelete(campaign)}
+                    onStatusChange={handleStatusChange}
+                  />
                 </motion.div>
-                )
-              })}
+              ))}
             </AnimatePresence>
           </div>
         )}
