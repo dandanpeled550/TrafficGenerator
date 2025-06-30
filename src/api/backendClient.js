@@ -227,7 +227,22 @@ const backendClient = {
         console.error('Error generating sample traffic data:', error);
         throw error;
       }
-    }
+    },
+    appendCampaignLog: async (campaignId, { message, level = "info" }) => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/traffic/campaigns/${campaignId}/log`, {
+          method: "POST",
+          headers: defaultHeaders,
+          credentials: "include",
+          body: JSON.stringify({ message, level }),
+        });
+        return await handleResponse(response);
+      } catch (error) {
+        // Optionally log to console or ignore
+        // console.error("Error appending campaign log:", error);
+        return { success: false, error: error.message };
+      }
+    },
   },
 
   // Session Endpoints
