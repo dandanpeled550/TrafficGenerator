@@ -1848,3 +1848,11 @@ def append_campaign_log_endpoint(campaign_id):
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@bp.route("/campaigns/<campaign_id>/logs", methods=["GET"])
+def download_campaign_log(campaign_id):
+    campaign_dir = os.path.join(TRAFFIC_DATA_DIR, campaign_id)
+    log_file = os.path.join(campaign_dir, 'logs.txt')
+    if not os.path.exists(log_file):
+        return jsonify({"error": "Log file not found"}), 404
+    return send_file(log_file, as_attachment=True)
