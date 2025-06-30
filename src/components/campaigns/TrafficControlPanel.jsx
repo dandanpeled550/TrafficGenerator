@@ -7,6 +7,14 @@ import { AlertCircle, Play, Square, Loader2, Zap, Pause, RefreshCw, Download } f
 import { motion } from "framer-motion";
 import { Progress } from "@/components/ui/progress";
 
+const logToBackend = async (campaignId, message, level = 'info') => {
+  try {
+    await backendClient.traffic.appendCampaignLog(campaignId, { message, level });
+  } catch (e) {
+    // Optionally, handle error silently
+  }
+};
+
 export default function TrafficControlPanel({ campaign, onStatusChange }) {
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
@@ -35,45 +43,45 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
   const handleStartCampaign = async () => {
     setIsStarting(true);
     try {
-      console.log('[StartCampaign] Step 1: Updating campaign status to running:', campaign.id);
+      await logToBackend(campaign.id, '[StartCampaign] Step 1: Updating campaign status to running: ' + campaign.id);
       await backendClient.traffic.updateCampaignStatus(campaign.id, 'running');
-      console.log('[StartCampaign] Step 2: Status updated, loading user profiles...');
+      await logToBackend(campaign.id, '[StartCampaign] Step 2: Status updated, loading user profiles...');
       // Get user profiles for this campaign
       const userProfiles = [];
       if (campaign.user_profile_ids && campaign.user_profile_ids.length > 0) {
         const allProfiles = await backendClient.profiles.list();
-        console.log('[StartCampaign] Step 3: All profiles loaded:', allProfiles);
+        await logToBackend(campaign.id, '[StartCampaign] Step 3: All profiles loaded: ' + JSON.stringify(allProfiles));
         campaign.user_profile_ids.forEach(profileId => {
           const profile = allProfiles.find(p => p.id === profileId);
           if (profile) userProfiles.push(profile);
         });
-        console.log('[StartCampaign] Step 4: User profiles for campaign:', userProfiles);
+        await logToBackend(campaign.id, '[StartCampaign] Step 4: User profiles for campaign: ' + JSON.stringify(userProfiles));
       } else {
-        console.log('[StartCampaign] Step 4: No user profiles to load.');
+        await logToBackend(campaign.id, '[StartCampaign] Step 4: No user profiles to load.');
       }
 
       // Generate traffic data configuration
       const trafficConfig = generateRTBTrafficData(campaign, userProfiles);
-      console.log('[StartCampaign] Step 5: Traffic config generated:', trafficConfig);
+      await logToBackend(campaign.id, '[StartCampaign] Step 5: Traffic config generated: ' + JSON.stringify(trafficConfig));
       // Start the traffic generation using the backend API
       const result = await startTrafficGeneration(trafficConfig);
-      console.log('[StartCampaign] Step 6: Traffic generation result:', result);
+      await logToBackend(campaign.id, '[StartCampaign] Step 6: Traffic generation result: ' + JSON.stringify(result));
       if (result.success) {
         onStatusChange(campaign.id, 'running');
         // Start monitoring the campaign progress
         monitorCampaignProgress(campaign.id, trafficConfig);
       } else {
-        console.error('[StartCampaign] Failed to start campaign:', result.error);
+        await logToBackend(campaign.id, '[StartCampaign] Failed to start campaign: ' + result.error, 'error');
         // Revert status if traffic generation fails
         await backendClient.traffic.updateCampaignStatus(campaign.id, 'draft');
       }
     } catch (error) {
-      console.error('[StartCampaign] Error starting campaign:', error);
+      await logToBackend(campaign.id, '[StartCampaign] Error starting campaign: ' + error, 'error');
       // Revert status on error
       try {
         await backendClient.traffic.updateCampaignStatus(campaign.id, 'draft');
       } catch (revertError) {
-        console.error('[StartCampaign] Error reverting campaign status:', revertError);
+        await logToBackend(campaign.id, '[StartCampaign] Error reverting campaign status: ' + revertError, 'error');
       }
     }
     setIsStarting(false);
