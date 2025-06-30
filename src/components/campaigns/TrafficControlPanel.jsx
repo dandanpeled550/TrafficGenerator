@@ -8,10 +8,11 @@ import { motion } from "framer-motion";
 import { Progress } from "@/components/ui/progress";
 
 const logToBackend = async (campaignId, message, level = 'info') => {
+  console.log('[logToBackend] Sending log:', { campaignId, message, level });
   try {
     await backendClient.traffic.appendCampaignLog(campaignId, { message, level });
   } catch (e) {
-    // Optionally, handle error silently
+    console.error('[logToBackend] Error:', e);
   }
 };
 

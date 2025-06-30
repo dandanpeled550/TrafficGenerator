@@ -27,7 +27,10 @@ const backendClient = {
   traffic: {
     generate: async (config) => {
       try {
-        console.log('Starting traffic generation with config:', config);
+        await backendClient.traffic.appendCampaignLog(
+          config.campaign_id,
+          { message: 'About to start traffic generation with config: ' + JSON.stringify(config), level: 'info' }
+        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/generate`, {
           method: 'POST',
           headers: defaultHeaders,
@@ -59,7 +62,10 @@ const backendClient = {
     },
     stop: async (campaignId) => {
       try {
-        console.log('Stopping traffic generation for campaign:', campaignId);
+        await backendClient.traffic.appendCampaignLog(
+          campaignId,
+          { message: 'About to stop traffic generation for campaign: ' + campaignId, level: 'info' }
+        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/stop/${campaignId}`, {
           method: 'POST',
           headers: defaultHeaders,
@@ -73,7 +79,10 @@ const backendClient = {
     },
     monitor: async (campaignId) => {
       try {
-        console.log('Getting monitoring data for campaign:', campaignId);
+        await backendClient.traffic.appendCampaignLog(
+          campaignId,
+          { message: 'About to get monitoring data for campaign: ' + campaignId, level: 'info' }
+        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/monitor/${campaignId}`, {
           headers: defaultHeaders,
           credentials: "include",
@@ -86,7 +95,10 @@ const backendClient = {
     },
     getStatus: async (campaignId) => {
       try {
-        console.log('Getting status for campaign:', campaignId);
+        await backendClient.traffic.appendCampaignLog(
+          campaignId,
+          { message: 'About to get status for campaign: ' + campaignId, level: 'info' }
+        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/status/${campaignId}`, {
           headers: defaultHeaders,
           credentials: "include",
@@ -102,7 +114,10 @@ const backendClient = {
         const url = campaignId 
           ? `${API_BASE_URL}/api/traffic/generated/${campaignId}`
           : `${API_BASE_URL}/api/traffic/generated`;
-        console.log('Fetching generated traffic:', url);
+        await backendClient.traffic.appendCampaignLog(
+          campaignId || 'all',
+          { message: 'About to fetch generated traffic: ' + url, level: 'info' }
+        );
         const response = await fetch(url, {
           headers: defaultHeaders,
           credentials: "include",
@@ -115,7 +130,10 @@ const backendClient = {
     },
     getStats: async (campaignId) => {
       try {
-        console.log('Getting stats for campaign:', campaignId);
+        await backendClient.traffic.appendCampaignLog(
+          campaignId,
+          { message: 'About to get stats for campaign: ' + campaignId, level: 'info' }
+        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/stats/${campaignId}`, {
           headers: defaultHeaders,
           credentials: "include",
@@ -128,7 +146,10 @@ const backendClient = {
     },
     checkHealth: async () => {
       try {
-        console.log('Checking backend health');
+        await backendClient.traffic.appendCampaignLog(
+          'system',
+          { message: 'About to check backend health', level: 'info' }
+        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/health`, {
           headers: defaultHeaders,
           credentials: "include",
@@ -142,7 +163,10 @@ const backendClient = {
     // NEW: Campaign management endpoints
     getCampaignInfo: async (campaignId) => {
       try {
-        console.log('Getting campaign info:', campaignId);
+        await backendClient.traffic.appendCampaignLog(
+          campaignId,
+          { message: 'About to get campaign info: ' + campaignId, level: 'info' }
+        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/campaigns/${campaignId}/info`, {
           headers: defaultHeaders,
           credentials: "include",
@@ -155,7 +179,10 @@ const backendClient = {
     },
     updateCampaignStatus: async (campaignId, status) => {
       try {
-        console.log('Updating campaign status:', campaignId, status);
+        await backendClient.traffic.appendCampaignLog(
+          campaignId,
+          { message: 'About to update campaign status: ' + campaignId + ' to ' + status, level: 'info' }
+        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/campaigns/${campaignId}/status`, {
           method: 'PUT',
           headers: defaultHeaders,
@@ -170,7 +197,10 @@ const backendClient = {
     },
     cleanupCampaign: async (campaignId) => {
       try {
-        console.log('Cleaning up campaign:', campaignId);
+        await backendClient.traffic.appendCampaignLog(
+          campaignId,
+          { message: 'About to cleanup campaign: ' + campaignId, level: 'info' }
+        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/cleanup/${campaignId}`, {
           method: 'POST',
           headers: defaultHeaders,
@@ -184,7 +214,10 @@ const backendClient = {
     },
     downloadTraffic: async (campaignId) => {
       try {
-        console.log('Downloading traffic for campaign:', campaignId);
+        await backendClient.traffic.appendCampaignLog(
+          campaignId,
+          { message: 'About to download traffic for campaign: ' + campaignId, level: 'info' }
+        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/download/${campaignId}`, {
           headers: defaultHeaders,
           credentials: "include",
