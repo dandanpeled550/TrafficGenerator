@@ -35,43 +35,45 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
   const handleStartCampaign = async () => {
     setIsStarting(true);
     try {
-      // First, update campaign status to 'running' using the new endpoint
-      console.log('Updating campaign status to running:', campaign.id);
+      console.log('[StartCampaign] Step 1: Updating campaign status to running:', campaign.id);
       await backendClient.traffic.updateCampaignStatus(campaign.id, 'running');
-      
+      console.log('[StartCampaign] Step 2: Status updated, loading user profiles...');
       // Get user profiles for this campaign
       const userProfiles = [];
       if (campaign.user_profile_ids && campaign.user_profile_ids.length > 0) {
         const allProfiles = await backendClient.profiles.list();
+        console.log('[StartCampaign] Step 3: All profiles loaded:', allProfiles);
         campaign.user_profile_ids.forEach(profileId => {
           const profile = allProfiles.find(p => p.id === profileId);
           if (profile) userProfiles.push(profile);
         });
+        console.log('[StartCampaign] Step 4: User profiles for campaign:', userProfiles);
+      } else {
+        console.log('[StartCampaign] Step 4: No user profiles to load.');
       }
 
       // Generate traffic data configuration
       const trafficConfig = generateRTBTrafficData(campaign, userProfiles);
-      
+      console.log('[StartCampaign] Step 5: Traffic config generated:', trafficConfig);
       // Start the traffic generation using the backend API
       const result = await startTrafficGeneration(trafficConfig);
-      
+      console.log('[StartCampaign] Step 6: Traffic generation result:', result);
       if (result.success) {
         onStatusChange(campaign.id, 'running');
-        
         // Start monitoring the campaign progress
         monitorCampaignProgress(campaign.id, trafficConfig);
       } else {
-        console.error('Failed to start campaign:', result.error);
+        console.error('[StartCampaign] Failed to start campaign:', result.error);
         // Revert status if traffic generation fails
         await backendClient.traffic.updateCampaignStatus(campaign.id, 'draft');
       }
     } catch (error) {
-      console.error('Error starting campaign:', error);
+      console.error('[StartCampaign] Error starting campaign:', error);
       // Revert status on error
       try {
         await backendClient.traffic.updateCampaignStatus(campaign.id, 'draft');
       } catch (revertError) {
-        console.error('Error reverting campaign status:', revertError);
+        console.error('[StartCampaign] Error reverting campaign status:', revertError);
       }
     }
     setIsStarting(false);
