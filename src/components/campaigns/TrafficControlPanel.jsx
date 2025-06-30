@@ -42,31 +42,32 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
   };
 
   const handleStartCampaign = async () => {
+    console.log('[DEBUG] handleStartCampaign called');
     setIsStarting(true);
     try {
-      await logToBackend(campaign.id, '[StartCampaign] Step 1: Updating campaign status to running: ' + campaign.id);
+      console.log('[DEBUG] About to update campaign status to running:', campaign.id);
       await backendClient.traffic.updateCampaignStatus(campaign.id, 'running');
-      await logToBackend(campaign.id, '[StartCampaign] Step 2: Status updated, loading user profiles...');
+      console.log('[DEBUG] Status updated, loading user profiles...');
       // Get user profiles for this campaign
       const userProfiles = [];
       if (campaign.user_profile_ids && campaign.user_profile_ids.length > 0) {
+        console.log('[DEBUG] About to fetch all profiles');
         const allProfiles = await backendClient.profiles.list();
-        await logToBackend(campaign.id, '[StartCampaign] Step 3: All profiles loaded: ' + JSON.stringify(allProfiles));
+        console.log('[DEBUG] All profiles loaded:', allProfiles);
         campaign.user_profile_ids.forEach(profileId => {
           const profile = allProfiles.find(p => p.id === profileId);
           if (profile) userProfiles.push(profile);
         });
-        await logToBackend(campaign.id, '[StartCampaign] Step 4: User profiles for campaign: ' + JSON.stringify(userProfiles));
-      } else {
-        await logToBackend(campaign.id, '[StartCampaign] Step 4: No user profiles to load.');
+        console.log('[DEBUG] User profiles for campaign:', userProfiles);
       }
-
-      // Generate traffic data configuration
+      // Build traffic config
+      console.log('[DEBUG] Building traffic config');
       const trafficConfig = generateRTBTrafficData(campaign, userProfiles);
-      await logToBackend(campaign.id, '[StartCampaign] Step 5: Traffic config generated: ' + JSON.stringify(trafficConfig));
-      // Start the traffic generation using the backend API
+      console.log('[DEBUG] Built traffic config:', trafficConfig);
+      // Start traffic generation
+      console.log('[DEBUG] About to call startTrafficGeneration');
       const result = await startTrafficGeneration(trafficConfig);
-      await logToBackend(campaign.id, '[StartCampaign] Step 6: Traffic generation result: ' + JSON.stringify(result));
+      console.log('[DEBUG] startTrafficGeneration result:', result);
       if (result.success) {
         onStatusChange(campaign.id, 'running');
         // Start monitoring the campaign progress
@@ -77,6 +78,7 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
         await backendClient.traffic.updateCampaignStatus(campaign.id, 'draft');
       }
     } catch (error) {
+      console.error('[DEBUG] Error in handleStartCampaign:', error);
       await logToBackend(campaign.id, '[StartCampaign] Error starting campaign: ' + error, 'error');
       // Revert status on error
       try {
@@ -84,8 +86,10 @@ export default function TrafficControlPanel({ campaign, onStatusChange }) {
       } catch (revertError) {
         await logToBackend(campaign.id, '[StartCampaign] Error reverting campaign status: ' + revertError, 'error');
       }
+    } finally {
+      setIsStarting(false);
+      console.log('[DEBUG] handleStartCampaign finished');
     }
-    setIsStarting(false);
   };
 
   const handleStopCampaign = async () => {
