@@ -1840,6 +1840,8 @@ def append_campaign_log_endpoint(campaign_id):
         data = request.get_json()
         message = data.get("message")
         level = data.get("level", "info")
+        # Log receipt of the frontend log request
+        logger.info(f"[FRONTEND LOG API] Received log request for campaign {campaign_id}: {message}")
         if not message:
             return jsonify({"error": "No log message provided"}), 400
         # Add timestamp, level, and FRONTEND marker
