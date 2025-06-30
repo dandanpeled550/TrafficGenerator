@@ -131,6 +131,7 @@ const backendClient = {
       }
     },
     getStats: async (campaignId) => {
+      console.log('About to get stats for campaign: ' + campaignId);
       try {
         await backendClient.traffic.appendCampaignLog(
           campaignId,
