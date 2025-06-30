@@ -26,8 +26,8 @@ const backendClient = {
   // Traffic Endpoints
   traffic: {
     generate: async (config) => {
+      console.log('About to start traffic generation');
       try {
-        console.log('About to start traffic generation');
         await backendClient.traffic.appendCampaignLog(
           config.campaign_id,
           { message: 'About to start traffic generation with config: ' + JSON.stringify(config), level: 'info' }
@@ -95,8 +95,8 @@ const backendClient = {
       }
     },
     getStatus: async (campaignId) => {
+      console.log('About to get status for campaign: ' + campaignId);
       try {
-        console.log('About to get status for campaign: ' + campaignId);
         await backendClient.traffic.appendCampaignLog(
           campaignId,
           { message: 'About to get status for campaign: ' + campaignId, level: 'info' }
