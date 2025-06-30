@@ -1833,3 +1833,18 @@ def get_campaign_adids(campaign_id: str):
             "success": False,
             "error": f"Error getting ADIDs: {str(e)}"
         }), 500
+
+@bp.route("/campaigns/<campaign_id>/log", methods=["POST"])
+def append_campaign_log_endpoint(campaign_id):
+    try:
+        data = request.get_json()
+        message = data.get("message")
+        level = data.get("level", "info")
+        if not message:
+            return jsonify({"error": "No log message provided"}), 400
+        # Add timestamp, level, and FRONTEND marker
+        log_entry = f"{datetime.utcnow().isoformat()} [FRONTEND][{level.upper()}] {message}"
+        append_campaign_log(campaign_id, log_entry)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
