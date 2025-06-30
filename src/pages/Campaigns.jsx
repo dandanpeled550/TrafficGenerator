@@ -59,15 +59,12 @@ const CampaignCard = ({ campaign, onDelete, onStatusChange }) => {
     try {
       console.log('[DEBUG] About to update campaign status');
       await backendClient.traffic.updateCampaignStatus(campaign.id, 'running');
-      console.log('[DEBUG] Status updated, building config');
-      // Build traffic config (example, adjust as needed)
-      const trafficConfig = buildTrafficConfig(campaign);
-      console.log('[DEBUG] Built traffic config:', trafficConfig);
-      console.log('[DEBUG] About to call backendClient.traffic.generate');
+      console.log('[DEBUG] Status updated, preparing to start traffic generation');
+      const trafficConfig = { campaign_id: campaign.id }; // Only send the ID
+      console.log('[DEBUG] About to call backendClient.traffic.generate with:', trafficConfig);
       const result = await backendClient.traffic.generate(trafficConfig);
       console.log('[DEBUG] backendClient.traffic.generate result:', result);
       if (result.success) {
-        // Optionally update UI or state
         console.log('[DEBUG] Traffic generation started successfully');
       } else {
         console.error('[DEBUG] Failed to start traffic generation:', result.error);
