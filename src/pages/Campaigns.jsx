@@ -32,6 +32,20 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 
+const buildTrafficConfig = (campaign) => ({
+  campaign_id: campaign.id,
+  target_url: campaign.target_url,
+  requests_per_minute: campaign.requests_per_minute || 10,
+  duration_minutes: campaign.duration_minutes || 60,
+  user_profile_ids: campaign.user_profile_ids || [],
+  profile_user_counts: campaign.profile_user_counts || {},
+  total_profile_users: Object.values(campaign.profile_user_counts || {}).reduce((a, b) => a + b, 0),
+  geo_locations: campaign.geo_locations || ["United States"],
+  rtb_config: campaign.rtb_config || {},
+  config: campaign.config || {},
+  log_file_path: campaign.log_file_path
+});
+
 const CampaignCard = ({ campaign, onDelete, onStatusChange }) => {
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
