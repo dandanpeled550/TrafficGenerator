@@ -336,6 +336,12 @@ def generate_traffic_background(config: TrafficConfig, thread_id: str):
             "traffic_generation_active": False
         })
 
+        # --- FIX: Update in-memory session status and end_time ---
+        from app.api.sessions import sessions
+        if config.campaign_id in sessions:
+            sessions[config.campaign_id].status = final_status
+            sessions[config.campaign_id].end_time = datetime.utcnow()
+
     except Exception as e:
         campaign_logger.error(f"[Session {config.campaign_id}] Error in background traffic generation: {str(e)}")
         append_campaign_log(config.campaign_id, f"ERROR: Exception in background traffic generation: {str(e)}")
