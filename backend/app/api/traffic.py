@@ -1845,6 +1845,9 @@ def append_campaign_log_endpoint(campaign_id):
         # Add timestamp, level, and FRONTEND marker
         log_entry = f"{datetime.utcnow().isoformat()} [FRONTEND][{level.upper()}] {message}"
         append_campaign_log(campaign_id, log_entry)
+        # Also write to campaign_events.log
+        with open(CAMPAIGN_EVENTS_LOG_PATH, 'a') as f:
+            f.write(log_entry + '\n')
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
