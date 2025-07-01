@@ -57,6 +57,7 @@ export default function CampaignDetail() {
   const [isStopping, setIsStopping] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [stats, setStats] = useState({});
+  const [isDownloading, setIsDownloading] = useState(false);
 
   useEffect(() => {
     loadCampaignData();
@@ -142,6 +143,29 @@ export default function CampaignDetail() {
       console.error("Failed to delete campaign:", error);
     }
     setShowDeleteConfirm(false);
+  };
+
+  const handleDownloadTraffic = async () => {
+    setIsDownloading(true);
+    try {
+      const response = await backendClient.traffic.downloadTraffic(campaignId);
+      if (response && response.data) {
+        const filename = response.filename || `traffic_${campaignId}.json`;
+        const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: 'application/json' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+      }
+    } catch (error) {
+      console.error('Failed to download traffic data:', error);
+      // Optionally show a toast or alert here
+    }
+    setIsDownloading(false);
   };
 
   const getStatusColor = (status) => {
@@ -275,6 +299,21 @@ export default function CampaignDetail() {
               className="border-slate-700 hover:bg-slate-800"
             >
               <RefreshCw className="w-4 h-4" />
+            </Button>
+            
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleDownloadTraffic}
+              disabled={isDownloading}
+              className="border-blue-700 text-blue-400 hover:bg-blue-900/20"
+              title="Download Traffic Data"
+            >
+              {isDownloading ? (
+                <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
             </Button>
             
             {campaign.status === 'draft' && (
