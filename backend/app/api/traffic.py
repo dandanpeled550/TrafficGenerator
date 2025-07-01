@@ -1861,3 +1861,129 @@ def download_campaign_log(campaign_id):
     if not os.path.exists(log_file):
         return jsonify({"error": "Log file not found"}), 404
     return send_file(log_file, as_attachment=True)
+
+@bp.route("/resume/<campaign_id>", methods=['POST'])
+def resume_campaign(campaign_id: str):
+    """Resume a stopped campaign from where it left off."""
+    try:
+        logger.info(f"[API] Received resume request for campaign {campaign_id}")
+        status_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'status.json')
+        campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
+        if not os.path.exists(status_file):
+            logger.warning(f"[API] No status file found for campaign {campaign_id}")
+            return jsonify({"success": False, "message": "No status file found for campaign"}), 404
+        with open(status_file, 'r') as f:
+            status_data = json.load(f)
+        if status_data.get('status') not in ['stopped', 'error']:
+            return jsonify({"success": False, "message": f"Campaign is not stopped or in error state (current status: {status_data.get('status')})"}), 400
+        # Calculate remaining time
+        original_duration = status_data.get('duration_minutes')
+        start_time_str = status_data.get('start_time')
+        end_time_str = status_data.get('end_time')
+        total_requests = status_data.get('total_requests', 0)
+        requests_per_minute = status_data.get('requests_per_minute', 10)
+        if not original_duration or not start_time_str:
+            return jsonify({"success": False, "message": "Missing duration or start_time in status file"}), 400
+        start_time = datetime.fromisoformat(start_time_str)
+        if end_time_str:
+            end_time = datetime.fromisoformat(end_time_str)
+        else:
+            end_time = datetime.utcnow()
+        elapsed_minutes = (end_time - start_time).total_seconds() / 60
+        remaining_minutes = max(0, original_duration - elapsed_minutes)
+        if remaining_minutes <= 0:
+            return jsonify({"success": False, "message": "No remaining time to resume"}), 400
+        # Load campaign config from status or campaign file
+        from app.api.sessions import sessions
+        if campaign_id not in sessions:
+            return jsonify({"success": False, "message": f"Campaign {campaign_id} not found in sessions"}), 404
+        campaign_data = sessions[campaign_id].to_dict()
+        # Prepare config for resume
+        config_data = {
+            'campaign_id': campaign_id,
+            'target_url': campaign_data['target_url'],
+            'requests_per_minute': requests_per_minute,
+            'duration_minutes': remaining_minutes,
+            'user_profile_ids': campaign_data['user_profile_ids'],
+            'profile_user_counts': campaign_data.get('profile_user_counts', {}),
+            'total_profile_users': campaign_data.get('total_profile_users', 0),
+            'geo_locations': campaign_data.get('geo_locations', ["United States"]),
+            'rtb_config': campaign_data.get('rtb_config', {}),
+            'config': campaign_data.get('config', {}),
+            'log_file_path': campaign_data.get('log_file_path')
+        }
+        from .traffic import TrafficConfig
+        config = TrafficConfig(**config_data)
+        logger.info(f"[API] Resuming campaign {campaign_id} with {remaining_minutes:.2f} minutes left")
+        # Create thread lock for this campaign
+        thread_locks[campaign_id] = threading.Lock()
+        thread_id = str(uuid.uuid4())
+        active_threads[campaign_id] = thread_id
+        thread = threading.Thread(
+            target=generate_traffic_background,
+            args=(config, thread_id),
+            daemon=True,
+            name=f"traffic_generator_{campaign_id}"
+        )
+        thread.start()
+        update_campaign_status(campaign_id, "running", {
+            "traffic_generation_resumed": True,
+            "thread_id": thread_id,
+            "start_time": datetime.utcnow().isoformat(),
+            "duration_minutes": remaining_minutes,
+            "requests_per_minute": requests_per_minute
+        })
+        logger.info(f"[API] Successfully resumed campaign {campaign_id}")
+        return jsonify({"success": True, "message": "Campaign resumed successfully", "campaign_id": campaign_id, "status": "running", "thread_id": thread_id})
+    except Exception as e:
+        logger.error(f"[API] Error resuming campaign: {str(e)}", exc_info=True)
+        return jsonify({"success": False, "message": f"Error resuming campaign: {str(e)}"}), 500
+
+# When stopping a campaign, also save remaining time in status file
+# (Edit cleanup_campaign_resources to save elapsed and remaining time)
+old_cleanup_campaign_resources = cleanup_campaign_resources
+
+def cleanup_campaign_resources(campaign_id: str):
+    try:
+        logger.info(f"[Cleanup] Starting cleanup for campaign {campaign_id}")
+        # Remove from active threads
+        if campaign_id in active_threads:
+            logger.info(f"[Cleanup] Removing campaign {campaign_id} from active threads")
+            del active_threads[campaign_id]
+        # Clean up thread lock
+        if campaign_id in thread_locks:
+            logger.info(f"[Cleanup] Removing thread lock for campaign {campaign_id}")
+            del thread_locks[campaign_id]
+        # Update campaign status to stopped and save remaining time
+        status_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'status.json')
+        if os.path.exists(status_file):
+            with open(status_file, 'r') as f:
+                status_data = json.load(f)
+            original_duration = status_data.get('duration_minutes')
+            start_time_str = status_data.get('start_time')
+            if original_duration and start_time_str:
+                start_time = datetime.fromisoformat(start_time_str)
+                elapsed_minutes = (datetime.utcnow() - start_time).total_seconds() / 60
+                remaining_minutes = max(0, original_duration - elapsed_minutes)
+                update_campaign_status(campaign_id, "stopped", {
+                    "end_time": datetime.utcnow().isoformat(),
+                    "cleanup_time": datetime.utcnow().isoformat(),
+                    "remaining_minutes": remaining_minutes,
+                    "elapsed_minutes": elapsed_minutes,
+                    "duration_minutes": original_duration
+                })
+            else:
+                update_campaign_status(campaign_id, "stopped", {
+                    "end_time": datetime.utcnow().isoformat(),
+                    "cleanup_time": datetime.utcnow().isoformat()
+                })
+        else:
+            update_campaign_status(campaign_id, "stopped", {
+                "end_time": datetime.utcnow().isoformat(),
+                "cleanup_time": datetime.utcnow().isoformat()
+            })
+        logger.info(f"[Cleanup] Successfully cleaned up resources for campaign {campaign_id}")
+        return True
+    except Exception as e:
+        logger.error(f"[Cleanup] Error cleaning up campaign resources: {str(e)}", exc_info=True)
+        return False
