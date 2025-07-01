@@ -279,6 +279,23 @@ const backendClient = {
         return { success: false, error: error.message };
       }
     },
+    resumeTraffic: async (campaignId) => {
+      try {
+        await backendClient.traffic.appendCampaignLog(
+          campaignId,
+          { message: 'About to resume traffic for campaign: ' + campaignId, level: 'info' }
+        );
+        const response = await fetch(`${API_BASE_URL}/api/traffic/resume/${campaignId}`, {
+          method: 'POST',
+          headers: defaultHeaders,
+          credentials: "include",
+        });
+        return await handleResponse(response);
+      } catch (error) {
+        console.error('Error resuming traffic:', error);
+        throw error;
+      }
+    },
   },
 
   // Session Endpoints

@@ -35,6 +35,7 @@ import {
 const CampaignCard = ({ campaign, onDelete, onStatusChange }) => {
   const [isStarting, setIsStarting] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
+  const [isResuming, setIsResuming] = useState(false);
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -87,6 +88,17 @@ const CampaignCard = ({ campaign, onDelete, onStatusChange }) => {
       console.error('Error stopping campaign:', error);
     }
     setIsStopping(false);
+  };
+
+  const handleResumeCampaign = async () => {
+    setIsResuming(true);
+    try {
+      await backendClient.traffic.resumeTraffic(campaign.id);
+      onStatusChange(campaign.id, 'running');
+    } catch (error) {
+      console.error('Error resuming campaign:', error);
+    }
+    setIsResuming(false);
   };
 
   const totalRequests = campaign.total_requests || 0;
@@ -165,6 +177,22 @@ const CampaignCard = ({ campaign, onDelete, onStatusChange }) => {
                   <Play className="w-4 h-4 mr-2" />
                 )}
                 Start
+              </Button>
+            )}
+            
+            {campaign.status === 'stopped' && (
+              <Button
+                size="sm"
+                onClick={handleResumeCampaign}
+                disabled={isResuming}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                {isResuming ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                ) : (
+                  <Play className="w-4 h-4 mr-2" />
+                )}
+                Resume
               </Button>
             )}
             
