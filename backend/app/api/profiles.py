@@ -4,6 +4,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 import uuid
 from .logging_config import get_logger
+from .referrer_bank import get_referrers
 
 logger = get_logger('Profile')
 
@@ -20,7 +21,8 @@ class UserProfile:
     demographics: Dict = field(default_factory=lambda: {
         'age_group': 'any',
         'gender': 'any',
-        'interests': []
+        'interests': [],
+        'countries': []
     })
     device_preferences: Dict = field(default_factory=lambda: {
         'device_brand': 'samsung',
@@ -46,15 +48,27 @@ def create_profile():
         logger.info(f"[Profile] Create request received: {data}")
         
         profile_id = str(uuid.uuid4())
+        demographics = data.get('demographics', {})
+        interests = demographics.get('interests', [])
+        countries = demographics.get('countries', [])
+        if isinstance(countries, str):
+            countries = [countries]
+        if not countries:
+            countries = ["United States"]  # Default fallback
+        # Build referrers dict
+        referrers = {}
+        for interest in interests:
+            for country in countries:
+                referrers[(interest, country)] = get_referrers(interest, country)
         profile = UserProfile(
             id=profile_id,
             name=data['name'],
             description=data['description'],
-            demographics=data.get('demographics', {}),
+            demographics=demographics,
             device_preferences=data.get('device_preferences', {}),
             app_usage=data.get('app_usage', {}),
             rtb_specifics=data.get('rtb_specifics', {}),
-            referrers=data.get('referrers', {})
+            referrers=referrers
         )
         profiles[profile_id] = profile
         logger.info(f"[Profile] Created: {profile}")
