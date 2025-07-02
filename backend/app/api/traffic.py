@@ -243,12 +243,14 @@ def generate_traffic_background(config: TrafficConfig, thread_id: str):
             if user_count > 0 and pid not in campaign_adids[config.campaign_id]:
                 campaign_adids[config.campaign_id][pid] = [generate_adid() for _ in range(user_count)]
 
+        user_stopped = False
         # Main traffic generation loop with improved error handling
         while True:
             try:
                 # Check if thread was stopped
                 if active_threads.get(config.campaign_id) != thread_id:
                     logger.info(f"[Traffic Generation] Traffic generation stopped for campaign {config.campaign_id} (thread ID mismatch)")
+                    user_stopped = True
                     break
 
                 # Check if we should stop
@@ -324,7 +326,10 @@ def generate_traffic_background(config: TrafficConfig, thread_id: str):
                 time.sleep(1)  # Prevent tight loop on error
 
         # Update final status with validation
-        final_status = "completed" if request_count > 0 else "error"
+        if user_stopped:
+            final_status = "stopped"
+        else:
+            final_status = "completed" if request_count > 0 else "error"
         campaign_logger.info(f"[Session {config.campaign_id}] Traffic generation completed. Status: {final_status}. Total: {request_count}, Success: {successful_requests}")
         append_campaign_log(config.campaign_id, f"COMPLETE: Traffic generation completed for campaign {config.campaign_id} at {datetime.utcnow().isoformat()} with status {final_status}. Total: {request_count}, Success: {successful_requests}")
         
