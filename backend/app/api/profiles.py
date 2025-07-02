@@ -4,7 +4,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 import uuid
 from .logging_config import get_logger
-from .referrer_bank import get_referrers
+from .llm_referrer_bank import get_referrers
 
 logger = get_logger('Profile')
 
