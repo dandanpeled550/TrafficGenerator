@@ -1,21 +1,23 @@
 services:
   - type: web
-    name: TrafficGenerator
+    name: traffic-generator-backend
     env: python
     buildCommand: |
-      cd backend
       pip install -r requirements.txt
     startCommand: |
-      cd backend
       FLASK_APP=app.main flask run --host 0.0.0.0 --port $PORT
+    buildFilter:
+      paths:
+        - backend/**
+    buildContext: backend
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.8
       - key: ENVIRONMENT
         value: production
       - key: CORS_ORIGINS
         value: https://trafficgenerator-1.onrender.com
-        
+      - key: OPENAI_API_KEY
+        value: (set in Render dashboard)
+
   - type: web
     name: traffic-generator-frontend
     env: node
@@ -24,6 +26,10 @@ services:
       npm run build
     startCommand: |
       node server.js
+    buildFilter:
+      paths:
+        - frontend/**
+    buildContext: frontend
     envVars:
       - key: NODE_VERSION
         value: 18.0.0
