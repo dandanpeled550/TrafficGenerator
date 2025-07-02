@@ -1966,6 +1966,11 @@ def resume_campaign(campaign_id: str):
             "requests_per_minute": requests_per_minute
         })
         logger.info(f"[API] Successfully resumed campaign {campaign_id}")
+        # --- FIX: Update in-memory session status to running ---
+        from app.api.sessions import sessions
+        if campaign_id in sessions:
+            sessions[campaign_id].status = "running"
+            sessions[campaign_id].updated_at = datetime.utcnow()
         return jsonify({"success": True, "message": "Campaign resumed successfully", "campaign_id": campaign_id, "status": "running", "thread_id": thread_id})
     except Exception as e:
         logger.error(f"[API] Error resuming campaign: {str(e)}", exc_info=True)
