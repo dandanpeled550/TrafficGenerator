@@ -1116,7 +1116,34 @@ def update_campaign_status(campaign_id: str, status: str, additional_data: Dict[
                 "successful_requests": successful_requests,
                 "last_activity_time": datetime.utcnow().isoformat()
             }
-            
+            # --- Ensure duration_minutes and start_time are always present if available ---
+            # Try to get from additional_data first, then from campaign file/session
+            duration_minutes = None
+            start_time = None
+            if additional_data:
+                duration_minutes = additional_data.get("duration_minutes")
+                start_time = additional_data.get("start_time")
+            # If not in additional_data, try to get from campaign file/session
+            if duration_minutes is None or start_time is None:
+                try:
+                    from app.api.sessions import sessions
+                    if campaign_id in sessions:
+                        session = sessions[campaign_id]
+                        if duration_minutes is None:
+                            duration_minutes = getattr(session, "duration_minutes", None)
+                        if start_time is None:
+                            st = getattr(session, "start_time", None)
+                            if st:
+                                if isinstance(st, str):
+                                    start_time = st
+                                elif hasattr(st, 'isoformat'):
+                                    start_time = st.isoformat()
+                except Exception as e:
+                    logger.warning(f"Could not get duration_minutes/start_time from session: {e}")
+            if duration_minutes is not None:
+                status_data["duration_minutes"] = duration_minutes
+            if start_time is not None:
+                status_data["start_time"] = start_time
             # Add any additional data
             if additional_data:
                 status_data.update(additional_data)
