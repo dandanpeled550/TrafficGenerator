@@ -35,6 +35,7 @@ class UserProfile:
         'preferred_ad_formats': [],
         'adid_persistence': 'per_user'
     })
+    referrers: Dict = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: str(uuid.uuid4()))
     updated_at: str = field(default_factory=lambda: str(uuid.uuid4()))
 
@@ -52,7 +53,8 @@ def create_profile():
             demographics=data.get('demographics', {}),
             device_preferences=data.get('device_preferences', {}),
             app_usage=data.get('app_usage', {}),
-            rtb_specifics=data.get('rtb_specifics', {})
+            rtb_specifics=data.get('rtb_specifics', {}),
+            referrers=data.get('referrers', {})
         )
         profiles[profile_id] = profile
         logger.info(f"[Profile] Created: {profile}")
@@ -101,6 +103,7 @@ def update_profile(profile_id):
         profile.device_preferences = data.get('device_preferences', profile.device_preferences)
         profile.app_usage = data.get('app_usage', profile.app_usage)
         profile.rtb_specifics = data.get('rtb_specifics', profile.rtb_specifics)
+        profile.referrers = data.get('referrers', profile.referrers)
         profile.updated_at = str(uuid.uuid4())
         logger.info(f"[Profile] Updated: {profile}")
         return jsonify(profile.__dict__)
