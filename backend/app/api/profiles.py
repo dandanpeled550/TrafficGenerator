@@ -59,7 +59,7 @@ def create_profile():
         referrers = {}
         for interest in interests:
             for country in countries:
-                referrers[(interest, country)] = get_referrers(interest, country)
+                referrers[f"{interest}|{country}"] = get_referrers(interest, country)
         profile = UserProfile(
             id=profile_id,
             name=data['name'],
