@@ -24,12 +24,21 @@ PROMPT_TEMPLATE = (
     "Only return the URLs as a plain list, one per line, no extra text."
 )
 
+def estimate_token_count(prompt: str) -> int:
+    """
+    Estimate the number of tokens in the prompt using a simple heuristic:
+    1 token ≈ 4 characters (OpenAI's rough estimate for English text).
+    """
+    return max(1, len(prompt) // 4)
+
 def get_referrers(interest: str, country: str) -> List[str]:
     logger.info(f"Requesting LLM referrers for interest='{interest}', country='{country}'")
     if not OPENAI_API_KEY:
         logger.error("OPENAI_API_KEY not set. Returning default referrers.")
         return DEFAULT_REFERRERS
     prompt = PROMPT_TEMPLATE.format(interest=interest, country=country)
+    token_estimate = estimate_token_count(prompt)
+    logger.info(f"Estimated token count for prompt: {token_estimate} (1 token ≈ 4 characters)")
     try:
         logger.info(f"Sending prompt to OpenAI: {prompt}")
         client = openai.OpenAI(api_key=OPENAI_API_KEY)
