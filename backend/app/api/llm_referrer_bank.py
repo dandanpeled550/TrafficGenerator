@@ -33,7 +33,7 @@ def get_referrers(interest: str, country: str) -> List[str]:
     prompt = PROMPT_TEMPLATE.format(interest=interest, country=country)
     try:
         logger.info(f"Sending prompt to OpenAI: {prompt}")
-        response = openai.resources.chat.completions.create(
+        response = openai.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=2000,
