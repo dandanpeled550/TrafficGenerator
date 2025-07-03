@@ -33,7 +33,7 @@ def get_referrers(interest: str, country: str) -> List[str]:
     prompt = PROMPT_TEMPLATE.format(interest=interest, country=country)
     try:
         logger.info(f"Sending prompt to OpenAI: {prompt}")
-        response = openai.ChatCompletion.create(
+        response = openai.resources.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=2000,
@@ -41,7 +41,7 @@ def get_referrers(interest: str, country: str) -> List[str]:
             n=1
         )
         logger.info(f"Raw LLM response: {response}")
-        content = response['choices'][0]['message']['content']
+        content = response.choices[0].message.content
         logger.info(f"LLM content: {content[:200]}... (truncated)")
         # Parse URLs from the response
         urls = [line.strip() for line in content.splitlines() if line.strip().startswith("http")]
