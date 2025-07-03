@@ -14,13 +14,13 @@ if not logger.hasHandlers():
     logger.addHandler(handler)
 
 # Default fallback URLs
-DEFAULT_REFERRERS = [f"https://defaultreferrer.com/page/{i}" for i in range(1, 101)]
+DEFAULT_REFERRERS = [f"https://defaultreferrer.com/page/{i}" for i in range(1, 5)]
 
 # Set your OpenAI API key in the environment
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 PROMPT_TEMPLATE = (
-    "Give me a list of 100 realistic, diverse URLs of popular websites or articles about {interest} in {country}. "
+    "Give me a list of 4 realistic, diverse URLs of popular websites or articles about {interest} in {country}. "
     "Only return the URLs as a plain list, one per line, no extra text."
 )
 
@@ -46,10 +46,10 @@ def get_referrers(interest: str, country: str) -> List[str]:
         # Parse URLs from the response
         urls = [line.strip() for line in content.splitlines() if line.strip().startswith("http")]
         logger.info(f"Parsed {len(urls)} URLs from LLM response.")
-        if len(urls) < 80:
-            logger.warning(f"LLM returned fewer than 80 URLs. Falling back to default.")
+        if len(urls) < 4:
+            logger.warning(f"LLM returned fewer than 4 URLs. Falling back to default.")
             return DEFAULT_REFERRERS
-        return urls[:100]
+        return urls[:4]
     except Exception as e:
         logger.error(f"Error during LLM referrer generation: {e}", exc_info=True)
         return DEFAULT_REFERRERS 
