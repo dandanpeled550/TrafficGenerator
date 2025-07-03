@@ -601,7 +601,8 @@ def generate_rtb_data(rtb_config: Optional[Dict[str, Any]], config: Optional[Tra
         return {}
 
 def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
-    """Generate a single traffic data entry with improved validation"""
+    """Generate a single traffic data entry with improved validation and LLM referrer assignment"""
+    import random
     try:
         if not isinstance(config, TrafficConfig):
             raise ValueError("Invalid config type")
@@ -623,6 +624,34 @@ def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
         for field in required_fields:
             if not traffic_data.get(field):
                 raise ValueError(f"Missing required field: {field}")
+
+        # --- LLM Referrer Assignment ---
+        # Build weighted list of user profiles
+        weighted_profiles = []
+        profile_id_to_profile = {}
+        for profile in (config.user_profiles or []):
+            pid = profile.get("id")
+            count = config.profile_user_counts.get(pid, 0)
+            if count > 0:
+                weighted_profiles.extend([profile] * count)
+                profile_id_to_profile[pid] = profile
+        selected_profile = random.choice(weighted_profiles) if weighted_profiles else None
+        selected_profile_id = selected_profile.get("id") if selected_profile else None
+        # Pick random interest and country
+        interests = (selected_profile.get("demographics", {}).get("interests") or []) if selected_profile else []
+        countries = (selected_profile.get("demographics", {}).get("countries") or []) if selected_profile else []
+        selected_interest = random.choice(interests) if interests else None
+        selected_country = random.choice(countries) if countries else None
+        # Get referrer list for this interest|country
+        referrer_key = f"{selected_interest}|{selected_country}" if selected_interest and selected_country else None
+        referrers = (selected_profile.get("referrers", {}).get(referrer_key, [])) if selected_profile and referrer_key else []
+        selected_referrer = random.choice(referrers) if referrers else None
+        # Add to traffic_data
+        traffic_data["selected_profile_id"] = selected_profile_id
+        traffic_data["selected_interest"] = selected_interest
+        traffic_data["selected_country"] = selected_country
+        traffic_data["referrer"] = selected_referrer
+
         # Add RTB data in OpenRTB format
         if config.rtb_config:
             rtb_data = generate_rtb_data(config.rtb_config, config)
