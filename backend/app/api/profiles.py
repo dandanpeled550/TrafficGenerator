@@ -137,4 +137,31 @@ def delete_profile(profile_id):
         return jsonify({"message": "Profile deleted successfully"})
     except Exception as e:
         logger.error(f"[Profile] Error deleting: {str(e)}")
-        return jsonify({"error": str(e)}), 500 
+        return jsonify({"error": str(e)}), 500
+
+@bp.route('/test-llm-referrers', methods=['GET', 'POST'])
+def test_llm_referrers():
+    """
+    Test endpoint for LLM referrer generation. Accepts interest and country as query params (GET) or JSON (POST).
+    Returns the list of referrers and logs the process.
+    """
+    import logging
+    logger = logging.getLogger("llm_referrer_bank")
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        interest = data.get('interest')
+        country = data.get('country')
+    else:
+        interest = request.args.get('interest')
+        country = request.args.get('country')
+    if not interest or not country:
+        return jsonify({"error": "Both 'interest' and 'country' are required."}), 400
+    logger.info(f"[API] Testing LLM referrers for interest='{interest}', country='{country}'")
+    referrers = get_referrers(interest, country)
+    logger.info(f"[API] LLM returned {len(referrers)} referrers for {interest}|{country}")
+    return jsonify({
+        "interest": interest,
+        "country": country,
+        "referrers": referrers,
+        "count": len(referrers)
+    }) 
