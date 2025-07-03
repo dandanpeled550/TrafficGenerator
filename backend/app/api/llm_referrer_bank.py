@@ -18,7 +18,6 @@ DEFAULT_REFERRERS = [f"https://defaultreferrer.com/page/{i}" for i in range(1, 1
 
 # Set your OpenAI API key in the environment
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-openai.api_key = OPENAI_API_KEY
 
 PROMPT_TEMPLATE = (
     "Give me a list of 100 realistic, diverse URLs of popular websites or articles about {interest} in {country}. "
@@ -33,7 +32,8 @@ def get_referrers(interest: str, country: str) -> List[str]:
     prompt = PROMPT_TEMPLATE.format(interest=interest, country=country)
     try:
         logger.info(f"Sending prompt to OpenAI: {prompt}")
-        response = openai.chat.completions.create(
+        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+        response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=2000,
