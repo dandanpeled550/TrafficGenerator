@@ -21,6 +21,6 @@ services:
     startCommand: node server.js
     envVars:
       - key: NODE_VERSION
-        value: 18.0.0
+        value: 18.18.2
       - key: VITE_API_URL
         value: https://trafficgenerator-hz4s.onrender.com
