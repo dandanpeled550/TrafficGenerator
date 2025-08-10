@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from .logging_config import get_logger
+from .llm_referrer_bank import get_referrers
 # from bson import ObjectId # Commented out ObjectId import
 
 # from app.database import get_database # Commented out database import
@@ -30,13 +31,14 @@ class Session:
     rtb_config: Optional[Dict[str, Any]] = None
     config: Optional[Dict[str, Any]] = None
     user_profile_ids: List[str] = field(default_factory=list)
-    profile_user_counts: Optional[Dict[str, int]] = field(default_factory=dict)
+    profile_user_counts: Optional[Dict[str, int]] = None
     total_profile_users: int = 0
     log_file_path: Optional[str] = None
     log_level: Optional[str] = None
     log_format: Optional[str] = None
     user_agents: List[str] = field(default_factory=list)
     referrers: List[str] = field(default_factory=list)
+    campaign_referrers: Optional[Dict[str, List[str]]] = None
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     total_requests: int = 0
@@ -68,6 +70,7 @@ class Session:
             'log_format': self.log_format,
             'user_agents': self.user_agents,
             'referrers': self.referrers,
+            'campaign_referrers': self.campaign_referrers,
             'total_requests': self.total_requests,
             'successful_requests': self.successful_requests,
             'last_activity_time': self.last_activity_time.isoformat() if isinstance(self.last_activity_time, datetime) else self.last_activity_time,
@@ -76,6 +79,46 @@ class Session:
 
 # Initialize in-memory storage for sessions
 sessions: Dict[str, Session] = {}
+
+def generate_campaign_referrers(user_profile_ids: List[str], geo_locations: List[str]) -> Dict[str, List[str]]:
+    """
+    Generate campaign-specific referrers based on assigned profiles and geo locations.
+    Returns a dictionary mapping 'interest|country' to a list of referrer URLs.
+    """
+    campaign_referrers = {}
+    
+    try:
+        for profile_id in user_profile_ids:
+            if profile_id in profiles:
+                profile = profiles[profile_id]
+                profile_interests = profile.demographics.get('interests', [])
+                profile_countries = profile.demographics.get('countries', [])
+                
+                # Use profile countries if available, otherwise use campaign geo_locations
+                countries_to_use = profile_countries if profile_countries else geo_locations
+                
+                for interest in profile_interests:
+                    for country in countries_to_use:
+                        key = f"{interest}|{country}"
+                        if key not in campaign_referrers:
+                            try:
+                                referrers = get_referrers(interest, country)
+                                campaign_referrers[key] = referrers
+                                logger.info(f"[Session] Generated referrers for {key}: {len(referrers)} URLs")
+                            except Exception as e:
+                                logger.warning(f"[Session] Failed to generate referrers for {key}: {e}")
+                                # Fallback to default referrers if LLM fails
+                                campaign_referrers[key] = [f"https://defaultreferrer.com/page/{i}" for i in range(1, 5)]
+            else:
+                logger.warning(f"[Session] Profile {profile_id} not found during referrer generation")
+        
+        logger.info(f"[Session] Generated campaign referrers: {len(campaign_referrers)} interest-country combinations")
+        return campaign_referrers
+        
+    except Exception as e:
+        logger.error(f"[Session] Error generating campaign referrers: {e}")
+        # Return empty dict on error - campaign can still be created
+        return {}
 
 def ensure_datetime_fields(session):
     # List of all datetime fields
@@ -144,6 +187,9 @@ def create_session():
         # Calculate total profile users
         total_profile_users = sum(profile_user_counts.values())
         
+        # Generate campaign-specific referrers based on assigned profiles and geo locations
+        campaign_referrers = generate_campaign_referrers(user_profile_ids, data.get('geo_locations', ["United States"]))
+        
         new_session = Session(
             id=session_id,
             name=data['name'],
@@ -163,7 +209,8 @@ def create_session():
             log_level=data.get('log_level'),
             log_format=data.get('log_format'),
             user_agents=data.get('user_agents', []),
-            referrers=data.get('referrers', [])
+            referrers=data.get('referrers', []),
+            campaign_referrers=campaign_referrers
         )
         new_session = ensure_datetime_fields(new_session)
         sessions[session_id] = new_session
@@ -269,6 +316,19 @@ def update_session(session_id: str):
                 profile_user_counts = {}
             session.profile_user_counts = profile_user_counts
             session.total_profile_users = sum(profile_user_counts.values())
+        
+        # Regenerate campaign referrers if user_profile_ids or geo_locations change
+        should_regenerate_referrers = False
+        if 'user_profile_ids' in data:
+            session.user_profile_ids = data['user_profile_ids']
+            should_regenerate_referrers = True
+        if 'geo_locations' in data:
+            session.geo_locations = data['geo_locations']
+            should_regenerate_referrers = True
+        
+        if should_regenerate_referrers:
+            logger.info(f"[Session] Regenerating campaign referrers due to profile or geo location changes")
+            session.campaign_referrers = generate_campaign_referrers(session.user_profile_ids, session.geo_locations)
         
         # Update other fields if provided
         for field, value in data.items():
