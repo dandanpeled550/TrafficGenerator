@@ -62,6 +62,58 @@ def append_campaign_log(campaign_id, message):
 
 
 
+def fix_corrupted_traffic_file(campaign_id: str) -> bool:
+    """Fix corrupted traffic file by converting array to object structure or recreating if needed"""
+    try:
+        campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
+        
+        if not os.path.exists(campaign_file):
+            # Create new file with correct structure
+            with open(campaign_file, 'w') as f:
+                json.dump({}, f)
+            logger.info(f"[File Fix] Created new traffic file for campaign {campaign_id}")
+            return True
+        
+        # Read current file
+        with open(campaign_file, 'r') as f:
+            try:
+                current_data = json.load(f)
+            except json.JSONDecodeError:
+                logger.warning(f"[File Fix] Corrupted JSON in campaign {campaign_id}, recreating file")
+                with open(campaign_file, 'w') as f:
+                    json.dump({}, f)
+                return True
+        
+        # Check if it's the old array structure
+        if isinstance(current_data, list):
+            logger.info(f"[File Fix] Converting old array structure to object structure for campaign {campaign_id}")
+            # Convert array to object
+            converted_data = {}
+            for entry in current_data:
+                request_id = entry.get('id', f"request_{len(converted_data)}")
+                converted_data[request_id] = entry
+            
+            # Save converted structure
+            with open(campaign_file, 'w') as f:
+                json.dump(converted_data, f, indent=2)
+            logger.info(f"[File Fix] Successfully converted file structure for campaign {campaign_id}")
+            return True
+        
+        # Check if it's already the correct object structure
+        if isinstance(current_data, dict):
+            logger.info(f"[File Fix] File structure is already correct for campaign {campaign_id}")
+            return True
+        
+        # Unknown structure, recreate file
+        logger.warning(f"[File Fix] Unknown file structure for campaign {campaign_id}, recreating file")
+        with open(campaign_file, 'w') as f:
+            json.dump({}, f)
+        return True
+        
+    except Exception as e:
+        logger.error(f"[File Fix] Error fixing traffic file for campaign {campaign_id}: {e}")
+        return False
+
 def append_traffic_to_file(campaign_id: str, traffic_data: Dict[str, Any]):
     """Append traffic data to campaign-specific file with improved error handling"""
     max_retries = 3
@@ -771,10 +823,25 @@ def get_campaign_traffic(campaign_id: str):
         campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
         
         if os.path.exists(campaign_file):
+            # Try to fix corrupted file first
+            if not fix_corrupted_traffic_file(campaign_id):
+                logger.error(f"[API] Failed to fix corrupted traffic file for campaign {campaign_id}")
+                return jsonify({
+                    "success": False,
+                    "message": "Failed to fix corrupted traffic file"
+                }), 500
+            
+            # Read the fixed file
             with open(campaign_file, 'r') as f:
                 traffic_data = json.load(f)
             
-
+            # Validate file structure - must be a dictionary
+            if not isinstance(traffic_data, dict):
+                logger.error(f"[API] Invalid file structure for campaign {campaign_id}. Expected dict, got {type(traffic_data)}")
+                return jsonify({
+                    "success": False,
+                    "message": f"Invalid file structure. Expected object format, got {type(traffic_data).__name__}"
+                }), 500
             
             # Count total requests and successful requests
             total_requests = len(traffic_data)
@@ -826,7 +893,13 @@ def download_campaign_traffic(campaign_id: str):
         with open(campaign_file, 'r') as f:
             traffic_data = json.load(f)
         
-
+        # Validate file structure - must be a dictionary
+        if not isinstance(traffic_data, dict):
+            logger.error(f"[API] Invalid file structure for campaign {campaign_id}. Expected dict, got {type(traffic_data)}")
+            return jsonify({
+                "success": False,
+                "message": f"Invalid file structure. Expected object format, got {type(traffic_data).__name__}"
+            }), 500
             
         # Add metadata to the download
         download_data = {
@@ -971,7 +1044,13 @@ def get_campaign_stats(campaign_id: str):
         with open(traffic_file, 'r') as f:
             traffic_data = json.load(f)
         
-
+        # Validate file structure - must be a dictionary
+        if not isinstance(traffic_data, dict):
+            logger.error(f"[API] Invalid file structure for campaign {campaign_id}. Expected dict, got {type(traffic_data)}")
+            return jsonify({
+                "success": False,
+                "message": f"Invalid file structure. Expected object format, got {type(traffic_data).__name__}"
+            }), 500
         
         total_requests = len(traffic_data)
         successful_requests = sum(1 for entry in traffic_data.values() if entry.get('success', False))
