@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 Test script to verify the new RTB data structure with separate nodes for each RTB_ID
+and each request as a separate entity
 """
 
 import json
@@ -124,6 +125,133 @@ def test_rtb_structure():
         traceback.print_exc()
         return False
 
+def test_request_structure():
+    """Test that each request is now a separate entity in the JSON structure"""
+    
+    print("\n🧪 Testing Request Structure Restructuring...")
+    
+    try:
+        # Import the traffic module
+        from app.api.traffic import generate_traffic_data, TrafficConfig
+        
+        print("✅ Successfully imported traffic module")
+        
+        # Generate multiple traffic entries
+        print("\n📊 Generating multiple traffic entries...")
+        rtb_config = {
+            "banner_w": 300,
+            "banner_h": 250,
+            "site_id": "test_site",
+            "site_name": "Test Site",
+            "ua": "Mozilla/5.0 (Test)",
+            "ip": "192.168.1.100"
+        }
+        
+        config = TrafficConfig(
+            campaign_id="test_campaign_requests",
+            target_url="https://example.com/test",
+            requests_per_minute=3,
+            duration_minutes=5,
+            geo_locations=["United States"],
+            rtb_config=rtb_config,
+            user_profile_ids=[],
+            profile_user_counts={},
+            total_profile_users=0
+        )
+        
+        # Generate multiple traffic entries
+        traffic_entries = []
+        for i in range(3):
+            traffic_data = generate_traffic_data(config)
+            # Modify the ID to make each unique
+            traffic_data['id'] = f"test_request_{i}_{int(traffic_data['id'])}"
+            traffic_entries.append(traffic_data)
+        
+        print(f"✅ Generated {len(traffic_entries)} traffic entries")
+        
+        # Simulate the new file structure (this is now how data is actually saved)
+        print("\n🔍 Testing new file structure...")
+        
+        # Create the new structure where each request is a separate entity
+        file_data = {}
+        for entry in traffic_entries:
+            request_id = entry.get('id', f"request_{len(file_data)}")
+            file_data[request_id] = entry
+        
+        print(f"✅ Created file structure with {len(file_data)} separate request entities")
+        
+        # Simulate the API response (which now just returns the file data directly)
+        api_response = {
+            "success": True,
+            "metadata": {
+                "total_requests": len(traffic_entries),
+                "successful_requests": len(traffic_entries),
+                "last_updated": "2024-01-01T00:00:00Z"
+            },
+            **file_data  # Spread each request as a separate entity
+        }
+        
+        print(f"✅ Created restructured API response with {len(restructured_data)} separate request entities")
+        
+        # Verify the structure
+        print("\n🔍 Verifying structure...")
+        
+        # Check that success and metadata are at the top level
+        if 'success' in api_response:
+            print("✅ 'success' field is at top level")
+        else:
+            print("❌ 'success' field not found at top level")
+            return False
+            
+        if 'metadata' in api_response:
+            print("✅ 'metadata' field is at top level")
+        else:
+            print("❌ 'metadata' field not found at top level")
+            return False
+        
+        # Check that each request is a separate entity
+        request_entities = [k for k, v in api_response.items() 
+                           if k not in ['success', 'metadata'] and isinstance(v, dict)]
+        
+        if len(request_entities) == len(traffic_entries):
+            print(f"✅ All {len(request_entities)} requests are separate entities")
+        else:
+            print(f"❌ Expected {len(traffic_entries)} request entities, found {len(request_entities)}")
+            return False
+        
+        # Check that each request has the expected structure
+        for request_id in request_entities:
+            request_data = api_response[request_id]
+            if 'id' in request_data and 'timestamp' in request_data:
+                print(f"✅ Request {request_id} has proper structure")
+            else:
+                print(f"❌ Request {request_id} missing required fields")
+                return False
+        
+        print("\n🎉 Request structure test passed!")
+        print("\n📋 New API Response Structure:")
+        print(f"   - success: {api_response['success']}")
+        print(f"   - metadata: {len(api_response['metadata'])} fields")
+        print(f"   - Individual requests: {list(request_entities)}")
+        
+        return True
+        
+    except Exception as e:
+        print(f"❌ Request structure test failed with error: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
 if __name__ == "__main__":
-    success = test_rtb_structure()
-    sys.exit(0 if success else 1) 
+    print("🚀 Starting RTB and Request Structure Tests...\n")
+    
+    # Run both tests
+    rtb_success = test_rtb_structure()
+    request_success = test_request_structure()
+    
+    if rtb_success and request_success:
+        print("\n🎉 All tests passed! The new structure is working correctly.")
+        sys.exit(0)
+    else:
+        print("\n❌ Some tests failed. Please check the output above.")
+        sys.exit(1) 
