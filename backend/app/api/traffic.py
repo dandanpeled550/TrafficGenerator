@@ -152,6 +152,21 @@ def append_traffic_to_file(campaign_id: str, traffic_data: Dict[str, Any]):
                     except json.JSONDecodeError:
                         data = {}
                     
+                    # Check if data is still in old list format and convert it
+                    if isinstance(data, list):
+                        logger.info(f"[File Operation] Converting old list structure to object structure for campaign {campaign_id}")
+                        converted_data = {}
+                        for entry in data:
+                            entry_id = entry.get('id', f"request_{len(converted_data)}")
+                            converted_data[entry_id] = entry
+                        data = converted_data
+                        logger.info(f"[File Operation] Successfully converted {len(converted_data)} entries")
+                    
+                    # Ensure data is a dictionary
+                    if not isinstance(data, dict):
+                        logger.error(f"[File Operation] Data is not a dictionary after conversion: {type(data)}")
+                        raise ValueError(f"Invalid data structure: expected dict, got {type(data)}")
+                    
                     # Save each request as a separate entity using its ID as the key
                     request_id = traffic_data.get('id', f"request_{int(time.time() * 1000)}")
                     data[request_id] = traffic_data
@@ -1112,18 +1127,31 @@ def get_campaign_stats(campaign_id: str):
                     if ad_format:
                         unique_ad_formats.add(ad_format)
         # Time-based statistics
-        timestamps = [entry.get('timestamp') for entry in traffic_data if entry.get('timestamp')]
+        if isinstance(traffic_data, list):
+            # Old format - list of requests
+            timestamps = [entry.get('timestamp') for entry in traffic_data if entry.get('timestamp')]
+            if traffic_data and 'duration_minutes' in traffic_data[0]:
+                duration_minutes = traffic_data[0]['duration_minutes']
+        elif isinstance(traffic_data, dict):
+            # New format - object with request IDs as keys
+            timestamps = [entry.get('timestamp') for entry in traffic_data.values() if entry.get('timestamp')]
+            # Get duration_minutes from first entry
+            first_entry = next(iter(traffic_data.values()), None) if traffic_data else None
+            if first_entry and 'duration_minutes' in first_entry:
+                duration_minutes = first_entry['duration_minutes']
+        else:
+            timestamps = []
+            duration_minutes = None
+            
         if timestamps:
             start_time = min(timestamps)
             actual_end_time = max(timestamps)
         else:
             start_time = None
             actual_end_time = None
-        # Planned end time: start_time + duration_minutes
-        duration_minutes = None
-        if traffic_data and 'duration_minutes' in traffic_data[0]:
-            duration_minutes = traffic_data[0]['duration_minutes']
-        else:
+            
+        # Get duration_minutes from session if not found in traffic data
+        if duration_minutes is None:
             from app.api.sessions import sessions
             if campaign_id in sessions:
                 duration_minutes = getattr(sessions[campaign_id], 'duration_minutes', None)
@@ -1291,8 +1319,21 @@ def update_campaign_status(campaign_id: str, status: str, additional_data: Dict[
                 try:
                     with open(campaign_file, 'r') as f:
                         traffic_data = json.load(f)
-                        total_requests = len(traffic_data)
-                        successful_requests = sum(1 for entry in traffic_data if entry.get('success', False))
+                        
+                        # Handle both old list format and new object format
+                        if isinstance(traffic_data, list):
+                            # Old format - list of requests
+                            total_requests = len(traffic_data)
+                            successful_requests = sum(1 for entry in traffic_data if entry.get('success', False))
+                        elif isinstance(traffic_data, dict):
+                            # New format - object with request IDs as keys
+                            total_requests = len(traffic_data)
+                            successful_requests = sum(1 for entry in traffic_data.values() if entry.get('success', False))
+                        else:
+                            logger.warning(f"Unknown traffic data format: {type(traffic_data)}")
+                            total_requests = 0
+                            successful_requests = 0
+                            
                 except Exception as e:
                     logger.error(f"Error reading campaign file: {str(e)}", exc_info=True)
             
@@ -1986,10 +2027,29 @@ def get_campaign_info(campaign_id: str):
             try:
                 with open(campaign_file, 'r') as f:
                     traffic_data = json.load(f)
+                    
+                    # Handle both old list format and new object format
+                    if isinstance(traffic_data, list):
+                        # Old format - list of requests
+                        total_requests = len(traffic_data)
+                        successful_requests = sum(1 for entry in traffic_data if entry.get('success', False))
+                        last_request_time = traffic_data[-1].get('timestamp') if traffic_data else None
+                    elif isinstance(traffic_data, dict):
+                        # New format - object with request IDs as keys
+                        total_requests = len(traffic_data)
+                        successful_requests = sum(1 for entry in traffic_data.values() if entry.get('success', False))
+                        # Get last request time from the last entry
+                        last_entry = list(traffic_data.values())[-1] if traffic_data else None
+                        last_request_time = last_entry.get('timestamp') if last_entry else None
+                    else:
+                        total_requests = 0
+                        successful_requests = 0
+                        last_request_time = None
+                    
                     traffic_stats.update({
-                        "total_requests": len(traffic_data),
-                        "successful_requests": sum(1 for entry in traffic_data if entry.get('success', False)),
-                        "last_request_time": traffic_data[-1].get('timestamp') if traffic_data else None
+                        "total_requests": total_requests,
+                        "successful_requests": successful_requests,
+                        "last_request_time": last_request_time
                     })
                     if traffic_stats["total_requests"] > 0:
                         traffic_stats["success_rate"] = (traffic_stats["successful_requests"] / traffic_stats["total_requests"]) * 100

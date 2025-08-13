@@ -237,8 +237,20 @@ def list_sessions():
                 try:
                     with open(campaign_file, 'r') as f:
                         traffic_data = json.load(f)
-                    session.total_requests = len(traffic_data)
-                    session.successful_requests = sum(1 for entry in traffic_data if entry.get('success', False))
+                    
+                    # Handle both old list format and new object format
+                    if isinstance(traffic_data, list):
+                        # Old format - list of requests
+                        session.total_requests = len(traffic_data)
+                        session.successful_requests = sum(1 for entry in traffic_data if entry.get('success', False))
+                    elif isinstance(traffic_data, dict):
+                        # New format - object with request IDs as keys
+                        session.total_requests = len(traffic_data)
+                        session.successful_requests = sum(1 for entry in traffic_data.values() if entry.get('success', False))
+                    else:
+                        logger.warning(f"Unknown traffic data format in sessions: {type(traffic_data)}")
+                        session.total_requests = 0
+                        session.successful_requests = 0
                 except Exception as e:
                     logger.warning(f"Could not read traffic file for session {campaign_id}: {e}")
                     session.total_requests = 0
