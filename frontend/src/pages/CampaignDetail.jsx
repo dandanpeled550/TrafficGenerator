@@ -36,6 +36,8 @@ import {
   Tag,
   Hash,
   Link as LinkIcon,
+  List,
+  ChevronDown,
 } from "lucide-react";
 import {
   Dialog,
@@ -45,6 +47,106 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+
+// RequestCard component for displaying individual requests
+const RequestCard = ({ request }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return 'N/A';
+    try {
+      return new Date(timestamp).toLocaleString();
+    } catch {
+      return timestamp;
+    }
+  };
+
+  const getStatusIcon = (success) => {
+    return success ? (
+      <CheckCircle className="w-4 h-4 text-green-400" />
+    ) : (
+      <XCircle className="w-4 h-4 text-red-400" />
+    );
+  };
+
+  return (
+    <Card className="bg-slate-800/50 border-slate-700">
+      <CardHeader 
+        className="cursor-pointer hover:bg-slate-700/50 transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {getStatusIcon(request.success)}
+            <div>
+              <CardTitle className="text-white text-sm">
+                Request {request.request_key || request.id}
+              </CardTitle>
+              <p className="text-slate-400 text-xs">
+                {formatTimestamp(request.timestamp)}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-xs border-slate-600">
+              {request.success ? 'Success' : 'Failed'}
+            </Badge>
+            {request.response_time && (
+              <Badge variant="outline" className="text-xs border-slate-600">
+                {request.response_time}ms
+              </Badge>
+            )}
+            <ChevronDown 
+              className={`w-4 h-4 text-slate-400 transition-transform ${
+                isExpanded ? 'rotate-180' : ''
+              }`}
+            />
+          </div>
+        </div>
+      </CardHeader>
+      
+      {isExpanded && (
+        <CardContent className="pt-0">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            {/* Basic Info */}
+            <div className="space-y-2">
+              <h4 className="font-semibold text-white">Basic Information</h4>
+              <div className="space-y-1 text-slate-300">
+                <p><span className="text-slate-400">Campaign ID:</span> {request.campaign_id}</p>
+                <p><span className="text-slate-400">Target URL:</span> {request.target_url}</p>
+                <p><span className="text-slate-400">Status Code:</span> {request.status_code || 'N/A'}</p>
+                <p><span className="text-slate-400">Response Size:</span> {request.response_size || 'N/A'} bytes</p>
+              </div>
+            </div>
+
+            {/* RTB Information */}
+            <div className="space-y-2">
+              <h4 className="font-semibold text-white">RTB Information</h4>
+              <div className="space-y-1 text-slate-300">
+                <p><span className="text-slate-400">RTB ID:</span> {request.rtb_id || 'N/A'}</p>
+                <p><span className="text-slate-400">User ID:</span> {request.rtb_user?.id || request.rtb_data?.user?.id || 'N/A'}</p>
+                <p><span className="text-slate-400">Device:</span> {request.rtb_device?.model || request.rtb_data?.device?.model || 'N/A'}</p>
+                <p><span className="text-slate-400">Geo:</span> {request.geo_locations?.join(', ') || 'N/A'}</p>
+              </div>
+            </div>
+
+            {/* Detailed RTB Data */}
+            {request.rtb_data && (
+              <div className="md:col-span-2">
+                <h4 className="font-semibold text-white mb-2">Detailed RTB Data</h4>
+                <div className="bg-slate-900/50 p-3 rounded-lg">
+                  <pre className="text-xs text-slate-300 overflow-x-auto">
+                    {JSON.stringify(request.rtb_data, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
+};
 
 export default function CampaignDetail() {
   const { campaignId } = useParams();
@@ -78,7 +180,24 @@ export default function CampaignDetail() {
       // Load traffic data
       try {
         const trafficResponse = await backendClient.traffic.getGenerated(campaignId);
-        setTrafficData(trafficResponse.data || []);
+        // Handle new structure where each request is already a separate entity
+        if (trafficResponse.success) {
+          // Extract requests from the response (excluding metadata and success fields)
+          const requests = Object.entries(trafficResponse)
+            .filter(([key, value]) => 
+              key !== 'success' && 
+              key !== 'metadata' && 
+              typeof value === 'object' && 
+              value !== null
+            )
+            .map(([key, value]) => ({
+              ...value,
+              request_key: key // Keep track of the original key
+            }));
+          setTrafficData(requests);
+        } else {
+          setTrafficData([]);
+        }
       } catch (error) {
         console.error("Failed to load traffic data:", error);
         setTrafficData([]);
@@ -464,7 +583,7 @@ export default function CampaignDetail() {
           transition={{ delay: 0.3 }}
         >
           <Tabs defaultValue="profiles" className="w-full">
-            <TabsList className="grid w-full grid-cols-7 bg-slate-800">
+            <TabsList className="grid w-full grid-cols-8 bg-slate-800">
               <TabsTrigger value="profiles" className="data-[state=active]:bg-slate-700">
                 <Users className="w-4 h-4 mr-2" />
                 Profiles
@@ -488,6 +607,10 @@ export default function CampaignDetail() {
               <TabsTrigger value="devices" className="data-[state=active]:bg-slate-700">
                 <DeviceIcon className="w-4 h-4 mr-2" />
                 Devices
+              </TabsTrigger>
+              <TabsTrigger value="requests" className="data-[state=active]:bg-slate-700">
+                <List className="w-4 h-4 mr-2" />
+                Requests
               </TabsTrigger>
               <TabsTrigger value="referrers" className="data-[state=active]:bg-slate-700">
                 <LinkIcon className="w-4 h-4 mr-2" />
@@ -624,6 +747,25 @@ export default function CampaignDetail() {
                           <DeviceIcon className="w-3 h-3 mr-1" />
                           {device}
                         </Badge>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="requests" className="mt-6">
+              <Card className="bg-slate-900/50 border-slate-800">
+                <CardHeader>
+                  <CardTitle className="text-white">Individual Requests ({trafficData.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {trafficData.length === 0 ? (
+                    <p className="text-slate-400">No traffic requests found for this campaign</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {trafficData.map((request, index) => (
+                        <RequestCard key={request.request_key || request.id || index} request={request} />
                       ))}
                     </div>
                   )}

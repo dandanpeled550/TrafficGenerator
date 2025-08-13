@@ -82,23 +82,26 @@ def append_traffic_to_file(campaign_id: str, traffic_data: Dict[str, Any]):
                 # Check if file exists and create if it doesn't
                 if not os.path.exists(campaign_file):
                     with open(campaign_file, 'w') as f:
-                        json.dump([], f)
+                        json.dump({}, f)
 
                 # Check file size and rotate if needed
                 if os.path.exists(campaign_file) and os.path.getsize(campaign_file) > MAX_FILE_SIZE:
                     backup_file = f"{campaign_file}.{int(time.time())}.bak"
                     os.rename(campaign_file, backup_file)
                     with open(campaign_file, 'w') as f:
-                        json.dump([], f)
+                        json.dump({}, f)
 
                 # Read and write with proper error handling
                 with open(campaign_file, 'r+') as f:
                     try:
                         data = json.load(f)
                     except json.JSONDecodeError:
-                        data = []
+                        data = {}
                     
-                    data.append(traffic_data)
+                    # Save each request as a separate entity using its ID as the key
+                    request_id = traffic_data.get('id', f"request_{int(time.time() * 1000)}")
+                    data[request_id] = traffic_data
+                    
                     f.seek(0)
                     json.dump(data, f, indent=2)
                     f.truncate()
@@ -768,15 +771,21 @@ def get_campaign_traffic(campaign_id: str):
         if os.path.exists(campaign_file):
             with open(campaign_file, 'r') as f:
                 traffic_data = json.load(f)
-            logger.info(f"[API] Retrieved {len(traffic_data)} traffic entries for campaign {campaign_id}")
+            
+            # Count total requests and successful requests
+            total_requests = len(traffic_data)
+            successful_requests = sum(1 for entry in traffic_data.values() if entry.get('success', False))
+            
+            logger.info(f"[API] Retrieved {total_requests} traffic entries for campaign {campaign_id}")
+            
             return jsonify({
                 "success": True,
-                "data": traffic_data,
                 "metadata": {
-                    "total_requests": len(traffic_data),
-                    "successful_requests": sum(1 for entry in traffic_data if entry.get('success', False)),
+                    "total_requests": total_requests,
+                    "successful_requests": successful_requests,
                     "last_updated": datetime.utcnow().isoformat()
-                }
+                },
+                **traffic_data  # Each request is already a separate entity
             })
         else:
             logger.warning(f"[API] No traffic data found for campaign {campaign_id}")
@@ -818,7 +827,7 @@ def download_campaign_traffic(campaign_id: str):
             "campaign_id": campaign_id,
             "download_time": datetime.utcnow().isoformat(),
             "total_requests": len(traffic_data),
-            "successful_requests": sum(1 for entry in traffic_data if entry.get('success', False)),
+            "successful_requests": sum(1 for entry in traffic_data.values() if entry.get('success', False)),
             "traffic_data": traffic_data
         }
         
@@ -956,7 +965,7 @@ def get_campaign_stats(campaign_id: str):
         with open(traffic_file, 'r') as f:
             traffic_data = json.load(f)
         total_requests = len(traffic_data)
-        successful_requests = sum(1 for entry in traffic_data if entry.get('success', False))
+        successful_requests = sum(1 for entry in traffic_data.values() if entry.get('success', False))
         success_rate = (successful_requests / total_requests * 100) if total_requests > 0 else 0
         # Extract unique ADIDs, device models, geo locations, ad formats from restructured RTB data
         unique_adids = set()
@@ -965,7 +974,7 @@ def get_campaign_stats(campaign_id: str):
         unique_ad_formats = set()
         unique_rtb_ids = set()
         
-        for entry in traffic_data:
+        for entry in traffic_data.values():
             # Use new restructured RTB data fields for easier access
             rtb_id = entry.get('rtb_id')
             if rtb_id:
