@@ -191,15 +191,31 @@ export default function CampaignDetail() {
     const uniqueUrls = new Set();
     const uniqueGeo = new Set();
     const uniqueDevices = new Set();
+    const uniqueRtbIds = new Set();
 
     trafficData.forEach(entry => {
-      // Extract ADIDs
-      const rtbData = entry.rtb_data || {};
-      const user = rtbData.user || {};
-      if (user.id) uniqueAdids.add(user.id);
+      // Extract RTB IDs from new structure
+      if (entry.rtb_id) uniqueRtbIds.add(entry.rtb_id);
+      
+      // Extract ADIDs - try new structure first, fall back to old
+      let userId = null;
+      if (entry.rtb_user && entry.rtb_user.id) {
+        userId = entry.rtb_user.id;
+      } else {
+        // Fall back to old structure
+        const rtbData = entry.rtb_data || {};
+        const user = rtbData.user || {};
+        userId = user.id;
+      }
+      if (userId) uniqueAdids.add(userId);
 
-      // Extract banners/ad formats
-      const imp = rtbData.imp || [];
+      // Extract banners/ad formats - try new structure first, fall back to old
+      let imp = entry.rtb_imp || [];
+      if (!imp.length) {
+        // Fall back to old structure
+        const rtbData = entry.rtb_data || {};
+        imp = rtbData.imp || [];
+      }
       imp.forEach(impression => {
         const banner = impression.banner || {};
         if (banner.format) uniqueBanners.add(banner.format);
@@ -213,13 +229,19 @@ export default function CampaignDetail() {
       const geo = entry.geo_locations || [];
       geo.forEach(location => uniqueGeo.add(location));
 
-      // Extract devices
-      const device = rtbData.device || {};
+      // Extract devices - try new structure first, fall back to old
+      let device = entry.rtb_device || {};
+      if (!device.model && !device.make) {
+        // Fall back to old structure
+        const rtbData = entry.rtb_data || {};
+        device = rtbData.device || {};
+      }
       if (device.model) uniqueDevices.add(device.model);
       if (device.make) uniqueDevices.add(device.make);
     });
 
     return {
+      uniqueRtbIds: Array.from(uniqueRtbIds),
       uniqueAdids: Array.from(uniqueAdids),
       uniqueBanners: Array.from(uniqueBanners),
       uniqueUrls: Array.from(uniqueUrls),
@@ -387,6 +409,16 @@ export default function CampaignDetail() {
           <Card className="bg-slate-900/50 border-slate-800">
             <CardContent className="p-6">
               <div className="flex items-center gap-2 mb-2">
+                <Hash className="w-5 h-5 text-purple-400" />
+                <span className="text-slate-400 text-sm">Unique RTB IDs</span>
+              </div>
+              <p className="text-3xl font-bold text-white">{uniqueData.uniqueRtbIds.length}</p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-slate-900/50 border-slate-800">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-2 mb-2">
                 <Users className="w-5 h-5 text-purple-400" />
                 <span className="text-slate-400 text-sm">Unique ADIDs</span>
               </div>
@@ -432,10 +464,14 @@ export default function CampaignDetail() {
           transition={{ delay: 0.3 }}
         >
           <Tabs defaultValue="profiles" className="w-full">
-            <TabsList className="grid w-full grid-cols-6 bg-slate-800">
+            <TabsList className="grid w-full grid-cols-7 bg-slate-800">
               <TabsTrigger value="profiles" className="data-[state=active]:bg-slate-700">
                 <Users className="w-4 h-4 mr-2" />
                 Profiles
+              </TabsTrigger>
+              <TabsTrigger value="rtbids" className="data-[state=active]:bg-slate-700">
+                <Hash className="w-4 h-4 mr-2" />
+                RTB IDs
               </TabsTrigger>
               <TabsTrigger value="adids" className="data-[state=active]:bg-slate-700">
                 <Hash className="w-4 h-4 mr-2" />
@@ -481,6 +517,27 @@ export default function CampaignDetail() {
                             </div>
                           </CardContent>
                         </Card>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="rtbids" className="mt-6">
+              <Card className="bg-slate-900/50 border-slate-800">
+                <CardHeader>
+                  <CardTitle className="text-white">RTB IDs ({uniqueData.uniqueRtbIds.length})</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {uniqueData.uniqueRtbIds.length === 0 ? (
+                    <p className="text-slate-400">No RTB IDs found in traffic data</p>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {uniqueData.uniqueRtbIds.map((rtbId, index) => (
+                        <div key={index} className="bg-slate-800/50 p-3 rounded-lg">
+                          <p className="text-white font-mono text-sm break-all">{rtbId}</p>
+                        </div>
                       ))}
                     </div>
                   )}
