@@ -673,10 +673,24 @@ def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
         traffic_data["selected_country"] = selected_country
         traffic_data["referrer"] = selected_referrer
 
-        # Add RTB data in OpenRTB format
+        # Add RTB data in OpenRTB format - restructured with RTB_ID as separate nodes
         if config.rtb_config:
             rtb_data = generate_rtb_data(config.rtb_config, config)
             if rtb_data:
+                # Extract RTB_ID and restructure data
+                rtb_id = rtb_data.get("id", "unknown")
+                
+                # Store RTB data with RTB_ID as separate nodes for easy table splitting
+                traffic_data["rtb_id"] = rtb_id
+                traffic_data["rtb_imp"] = rtb_data.get("imp", [])
+                traffic_data["rtb_site"] = rtb_data.get("site", {})
+                traffic_data["rtb_device"] = rtb_data.get("device", {})
+                traffic_data["rtb_user"] = rtb_data.get("user", {})
+                traffic_data["rtb_auction_type"] = rtb_data.get("at", 2)
+                traffic_data["rtb_timeout"] = rtb_data.get("tmax", 120)
+                traffic_data["rtb_currency"] = rtb_data.get("cur", ["USD"])
+                
+                # Keep original rtb_data for backward compatibility
                 traffic_data["rtb_data"] = rtb_data
             else:
                 logger.warning("RTB data could not be generated, using empty object.")
@@ -944,36 +958,62 @@ def get_campaign_stats(campaign_id: str):
         total_requests = len(traffic_data)
         successful_requests = sum(1 for entry in traffic_data if entry.get('success', False))
         success_rate = (successful_requests / total_requests * 100) if total_requests > 0 else 0
-        # Extract unique ADIDs, device models, geo locations, ad formats from nested RTB data
+        # Extract unique ADIDs, device models, geo locations, ad formats from restructured RTB data
         unique_adids = set()
         unique_devices = set()
         unique_geo = set()
         unique_ad_formats = set()
+        unique_rtb_ids = set()
+        
         for entry in traffic_data:
-            rtb = entry.get('rtb_data', {})
-            # ADID/user.id
-            user = rtb.get('user', {})
-            adid = user.get('id')
+            # Use new restructured RTB data fields for easier access
+            rtb_id = entry.get('rtb_id')
+            if rtb_id:
+                unique_rtb_ids.add(rtb_id)
+            
+            # ADID/user.id - try new structure first, fall back to old
+            rtb_user = entry.get('rtb_user', {})
+            adid = rtb_user.get('id')
+            if not adid:
+                # Fall back to old structure
+                rtb = entry.get('rtb_data', {})
+                user = rtb.get('user', {})
+                adid = user.get('id')
             if adid:
                 unique_adids.add(adid)
-            # Device model
-            device = rtb.get('device', {})
-            model = device.get('model') or device.get('device_model') or device.get('model_name')
+            
+            # Device model - try new structure first, fall back to old
+            rtb_device = entry.get('rtb_device', {})
+            model = rtb_device.get('model') or rtb_device.get('device_model') or rtb_device.get('model_name')
+            if not model:
+                # Fall back to old structure
+                device = rtb.get('device', {})
+                model = device.get('model') or device.get('device_model') or device.get('model_name')
             if model:
                 unique_devices.add(model)
+            
             # Geo locations (flatten list if present)
             geo = entry.get('geo_locations')
             if isinstance(geo, list):
                 unique_geo.update(geo)
             elif isinstance(geo, str):
                 unique_geo.add(geo)
-            # Ad formats (from imp section)
-            imp = rtb.get('imp')
-            if isinstance(imp, list) and imp:
-                banner = imp[0].get('banner', {})
+            
+            # Ad formats (from imp section) - try new structure first, fall back to old
+            rtb_imp = entry.get('rtb_imp', [])
+            if isinstance(rtb_imp, list) and rtb_imp:
+                banner = rtb_imp[0].get('banner', {})
                 ad_format = banner.get('ad_format') or banner.get('format')
                 if ad_format:
                     unique_ad_formats.add(ad_format)
+            else:
+                # Fall back to old structure
+                imp = rtb.get('imp')
+                if isinstance(imp, list) and imp:
+                    banner = imp[0].get('banner', {})
+                    ad_format = banner.get('ad_format') or banner.get('format')
+                    if ad_format:
+                        unique_ad_formats.add(ad_format)
         # Time-based statistics
         timestamps = [entry.get('timestamp') for entry in traffic_data if entry.get('timestamp')]
         if timestamps:
@@ -1004,6 +1044,7 @@ def get_campaign_stats(campaign_id: str):
             "total_requests": total_requests,
             "successful_requests": successful_requests,
             "success_rate": round(success_rate, 2),
+            "unique_rtb_ids": list(unique_rtb_ids),
             "unique_adids": list(unique_adids),
             "unique_device_models": list(unique_devices),
             "unique_geo_locations": list(unique_geo),
@@ -1409,11 +1450,16 @@ def test_traffic_functions():
                     "total_profile_users": traffic_data.get("total_profile_users") == 100
                 },
                 "rtb_data": {
-                    "device_brand": traffic_data.get("rtb_data", {}).get("device_brand") == "samsung",
-                    "device_model": traffic_data.get("rtb_data", {}).get("device_model") in ["Galaxy S24"],
-                    "ad_format": traffic_data.get("rtb_data", {}).get("ad_format") in ["banner"],
-                    "app_category": traffic_data.get("rtb_data", {}).get("app_category") in ["IAB9"]
-                } if "rtb_data" in traffic_data else None
+                    "rtb_id": bool(traffic_data.get("rtb_id")),
+                    "rtb_imp": bool(traffic_data.get("rtb_imp")),
+                    "rtb_site": bool(traffic_data.get("rtb_site")),
+                    "rtb_device": bool(traffic_data.get("rtb_device")),
+                    "rtb_user": bool(traffic_data.get("rtb_user")),
+                    "rtb_auction_type": bool(traffic_data.get("rtb_auction_type")),
+                    "rtb_timeout": bool(traffic_data.get("rtb_timeout")),
+                    "rtb_currency": bool(traffic_data.get("rtb_currency")),
+                    "legacy_rtb_data": bool(traffic_data.get("rtb_data"))
+                } if "rtb_id" in traffic_data else None
             }
 
             # Check if all required fields are present and correct
@@ -1456,12 +1502,23 @@ def test_traffic_functions():
                 "user_profile_ids": ["profile1"],
                 "profile_user_counts": {"profile1": 100},
                 "total_profile_users": 100,
+                "rtb_id": "test-rtb-123",
+                "rtb_imp": [{"id": "1", "banner": {"w": 300, "h": 250}}],
+                "rtb_site": {"id": "site123", "name": "Test Site"},
+                "rtb_device": {"ua": "Mozilla/5.0 (Test)", "ip": "192.168.1.1"},
+                "rtb_user": {"id": generate_adid()},
+                "rtb_auction_type": 2,
+                "rtb_timeout": 120,
+                "rtb_currency": ["USD"],
                 "rtb_data": {
-                    "device_brand": "samsung",
-                    "device_model": "Galaxy S24",
-                    "ad_format": "banner",
-                    "app_category": "IAB9",
-                    "adid": generate_adid()
+                    "id": "test-rtb-123",
+                    "imp": [{"id": "1", "banner": {"w": 300, "h": 250}}],
+                    "site": {"id": "site123", "name": "Test Site"},
+                    "device": {"ua": "Mozilla/5.0 (Test)", "ip": "192.168.1.1"},
+                    "user": {"id": generate_adid()},
+                    "at": 2,
+                    "tmax": 120,
+                    "cur": ["USD"]
                 }
             })
             
