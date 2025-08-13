@@ -60,6 +60,8 @@ def append_campaign_log(campaign_id, message):
     with open(log_file, 'a') as f:
         f.write(message + '\n')
 
+
+
 def append_traffic_to_file(campaign_id: str, traffic_data: Dict[str, Any]):
     """Append traffic data to campaign-specific file with improved error handling"""
     max_retries = 3
@@ -772,6 +774,8 @@ def get_campaign_traffic(campaign_id: str):
             with open(campaign_file, 'r') as f:
                 traffic_data = json.load(f)
             
+
+            
             # Count total requests and successful requests
             total_requests = len(traffic_data)
             successful_requests = sum(1 for entry in traffic_data.values() if entry.get('success', False))
@@ -821,6 +825,8 @@ def download_campaign_traffic(campaign_id: str):
             
         with open(campaign_file, 'r') as f:
             traffic_data = json.load(f)
+        
+
             
         # Add metadata to the download
         download_data = {
@@ -964,6 +970,9 @@ def get_campaign_stats(campaign_id: str):
             }), 404
         with open(traffic_file, 'r') as f:
             traffic_data = json.load(f)
+        
+
+        
         total_requests = len(traffic_data)
         successful_requests = sum(1 for entry in traffic_data.values() if entry.get('success', False))
         success_rate = (successful_requests / total_requests * 100) if total_requests > 0 else 0
