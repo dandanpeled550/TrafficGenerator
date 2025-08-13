@@ -432,7 +432,7 @@ export default function CampaignDetail() {
           transition={{ delay: 0.3 }}
         >
           <Tabs defaultValue="profiles" className="w-full">
-            <TabsList className="grid w-full grid-cols-5 bg-slate-800">
+            <TabsList className="grid w-full grid-cols-6 bg-slate-800">
               <TabsTrigger value="profiles" className="data-[state=active]:bg-slate-700">
                 <Users className="w-4 h-4 mr-2" />
                 Profiles
@@ -452,6 +452,10 @@ export default function CampaignDetail() {
               <TabsTrigger value="devices" className="data-[state=active]:bg-slate-700">
                 <DeviceIcon className="w-4 h-4 mr-2" />
                 Devices
+              </TabsTrigger>
+              <TabsTrigger value="referrers" className="data-[state=active]:bg-slate-700">
+                <LinkIcon className="w-4 h-4 mr-2" />
+                Referrers
               </TabsTrigger>
             </TabsList>
 
@@ -564,6 +568,54 @@ export default function CampaignDetail() {
                           {device}
                         </Badge>
                       ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="referrers" className="mt-6">
+              <Card className="bg-slate-900/50 border-slate-800">
+                <CardHeader>
+                  <CardTitle className="text-white">Campaign Referrers</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {!campaign.campaign_referrers || Object.keys(campaign.campaign_referrers).length === 0 ? (
+                    <p className="text-slate-400">No campaign-specific referrers generated yet.</p>
+                  ) : (
+                    <div className="space-y-4">
+                      {Object.entries(campaign.campaign_referrers).map(([key, referrers]) => {
+                        const [interest, country] = key.split('|');
+                        return (
+                          <div key={key} className="bg-slate-800/50 p-4 rounded-lg">
+                            <div className="flex items-center gap-2 mb-3">
+                              <Badge variant="outline" className="border-blue-700 text-blue-400">
+                                {interest}
+                              </Badge>
+                              <Badge variant="outline" className="border-green-700 text-green-400">
+                                {country}
+                              </Badge>
+                              <span className="text-slate-400 text-sm">
+                                ({referrers.length} referrers)
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                              {referrers.map((referrer, index) => (
+                                <div key={index} className="bg-slate-700/50 p-2 rounded text-xs">
+                                  <a 
+                                    href={referrer} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-blue-400 hover:text-blue-300 break-all"
+                                  >
+                                    {referrer}
+                                  </a>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </CardContent>

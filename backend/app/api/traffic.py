@@ -137,6 +137,7 @@ class TrafficConfig:
     user_profile_ids: List[str] = None
     profile_user_counts: Dict[str, int] = None
     total_profile_users: int = 0
+    campaign_referrers: Optional[Dict[str, List[str]]] = None
 
     def __post_init__(self):
         if self.user_profiles is None:
@@ -153,6 +154,8 @@ class TrafficConfig:
             self.config = {}
         if self.rtb_config is None:
             self.rtb_config = {}
+        if self.campaign_referrers is None:
+            self.campaign_referrers = {}
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert TrafficConfig to a dictionary with serializable values"""
@@ -169,7 +172,8 @@ class TrafficConfig:
             "total_profile_users": self.total_profile_users,
             "log_file_path": self.log_file_path,
             "start_time": self.start_time.isoformat() if self.start_time else None,
-            "end_time": self.end_time.isoformat() if self.end_time else None
+            "end_time": self.end_time.isoformat() if self.end_time else None,
+            "campaign_referrers": self.campaign_referrers
         }
 
 def generate_traffic_background(config: TrafficConfig, thread_id: str):
@@ -460,7 +464,7 @@ def generate_traffic():
                 logger.error(f"[API] {error_msg}")
                 return jsonify({"error": error_msg}), 400
 
-            # Create traffic config from campaign data
+            # Prepare config data for TrafficConfig
             config_data = {
                 'campaign_id': campaign_id,
                 'target_url': campaign_data['target_url'],
@@ -472,7 +476,8 @@ def generate_traffic():
                 'geo_locations': campaign_data.get('geo_locations', ["United States"]),
                 'rtb_config': campaign_data.get('rtb_config', {}),
                 'config': campaign_data.get('config', {}),
-                'log_file_path': campaign_data.get('log_file_path')
+                'log_file_path': campaign_data.get('log_file_path'),
+                'campaign_referrers': campaign_data.get('campaign_referrers', {})
             }
 
             # Create traffic config
@@ -644,8 +649,24 @@ def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
         selected_country = random.choice(countries) if countries else None
         # Get referrer list for this interest|country
         referrer_key = f"{selected_interest}|{selected_country}" if selected_interest and selected_country else None
-        referrers = (selected_profile.get("referrers", {}).get(referrer_key, [])) if selected_profile and referrer_key else []
-        selected_referrer = random.choice(referrers) if referrers else None
+        
+        # Try to use campaign-specific referrers first, fall back to profile referrers
+        selected_referrer = None
+        if referrer_key:
+            # Check campaign referrers first
+            if config.campaign_referrers and referrer_key in config.campaign_referrers:
+                campaign_referrers = config.campaign_referrers[referrer_key]
+                if campaign_referrers:
+                    selected_referrer = random.choice(campaign_referrers)
+                    logger.debug(f"Using campaign-specific referrer for {referrer_key}")
+            
+            # Fall back to profile referrers if campaign referrers not available
+            if not selected_referrer:
+                profile_referrers = (selected_profile.get("referrers", {}).get(referrer_key, [])) if selected_profile else []
+                if profile_referrers:
+                    selected_referrer = random.choice(profile_referrers)
+                    logger.debug(f"Using profile referrer for {referrer_key}")
+        
         # Add to traffic_data
         traffic_data["selected_profile_id"] = selected_profile_id
         traffic_data["selected_interest"] = selected_interest
