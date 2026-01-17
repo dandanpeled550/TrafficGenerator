@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Frontend-Backend Compatibility Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #0f0f23;
+            color: #ffffff;
+        }
+        .container {
+            background: #1a1a2e;
+            border-radius: 12px;
+            padding: 24px;
+            border: 1px solid #2d2d44;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .test-section {
+            margin-bottom: 24px;
+            padding: 16px;
+            background: #16213e;
+            border-radius: 8px;
+            border: 1px solid #0f3460;
+        }
+        .test-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #4f9da6;
+        }
+        .test-button {
+            background: #4f9da6;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-right: 8px;
+            margin-bottom: 8px;
+        }
+        .test-button:hover {
+            background: #3d7a82;
+        }
+        .test-button:disabled {
+            background: #666;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 12px;
+            padding: 12px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .result.success {
+            background: #1a472a;
+            border: 1px solid #2d5a3d;
+            color: #4ade80;
+        }
+        .result.error {
+            background: #4a1a1a;
+            border: 1px solid #5a2a2a;
+            color: #f87171;
+        }
+        .result.info {
+            background: #1a1a4a;
+            border: 1px solid #2a2a5a;
+            color: #60a5fa;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        .status.passed {
+            background: #1a472a;
+            color: #4ade80;
+        }
+        .status.failed {
+            background: #4a1a1a;
+            color: #f87171;
+        }
+        .summary {
+            background: #1a1a2e;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 24px;
+            border: 1px solid #2d2d44;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Frontend-Backend Compatibility Test</h1>
+            <p>Testing API endpoints from the frontend perspective</p>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">1. Basic Connectivity Tests</div>
+            <button class="test-button" onclick="testHealthCheck()">Health Check</button>
+            <button class="test-button" onclick="testTrafficSimulation()">Traffic Simulation</button>
+            <button class="test-button" onclick="testErrorHandling()">Error Handling</button>
+            <div id="basic-results" class="result info">Click a button to run tests...</div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">2. Profile Management Tests</div>
+            <button class="test-button" onclick="testProfileListing()">List Profiles</button>
+            <button class="test-button" onclick="testProfileCreation()">Create Profile</button>
+            <div id="profile-results" class="result info">Click a button to run tests...</div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">3. Campaign Management Tests</div>
+            <button class="test-button" onclick="testCampaignListing()">List Campaigns</button>
+            <button class="test-button" onclick="testCampaignCreation()">Create Campaign</button>
+            <button class="test-button" onclick="testCampaignStatusUpdate()">Update Status</button>
+            <button class="test-button" onclick="testCampaignInfo()">Get Campaign Info</button>
+            <div id="campaign-results" class="result info">Click a button to run tests...</div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">4. Traffic Generation Tests</div>
+            <button class="test-button" onclick="testTrafficGeneration()">Start Traffic</button>
+            <button class="test-button" onclick="testTrafficMonitoring()">Monitor Traffic</button>
+            <button class="test-button" onclick="testTrafficStop()">Stop Traffic</button>
+            <button class="test-button" onclick="testTrafficCleanup()">Cleanup</button>
+            <div id="traffic-results" class="result info">Click a button to run tests...</div>
+        </div>
+
+        <div class="summary">
+            <h3>📊 Test Summary</h3>
+            <div id="test-summary">No tests run yet</div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE_URL = 'https://trafficgenerator-hz4s.onrender.com';
+        let testProfileId = null;
+        let testCampaignId = null;
+        let testResults = { passed: 0, failed: 0, total: 0 };
+
+        // Utility functions
+        const log = (message, type = 'info') => {
+            const timestamp = new Date().toLocaleTimeString();
+            return `[${timestamp}] ${message}\n`;
+        };
+
+        const makeRequest = async (url, options = {}) => {
+            const defaultOptions = {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            };
+            
+            const finalOptions = { ...defaultOptions, ...options };
+            
+            try {
+                const response = await fetch(url, finalOptions);
+                const data = await response.json();
+                
+                return {
+                    status: response.status,
+                    ok: response.ok,
+                    data: data
+                };
+            } catch (error) {
+                return {
+                    status: 0,
+                    ok: false,
+                    data: { error: error.message }
+                };
+            }
+        };
+
+        const updateResult = (elementId, content, type = 'info') => {
+            const element = document.getElementById(elementId);
+            element.textContent = content;
+            element.className = `result ${type}`;
+        };
+
+        const updateSummary = () => {
+            const summary = document.getElementById('test-summary');
+            summary.innerHTML = `
+                <div>Total Tests: ${testResults.total}</div>
+                <div>Passed: <span class="status passed">${testResults.passed}</span></div>
+                <div>Failed: <span class="status failed">${testResults.failed}</span></div>
+                <div>Success Rate: ${testResults.total > 0 ? Math.round((testResults.passed / testResults.total) * 100) : 0}%</div>
+            `;
+        };
+
+        // Test functions
+        async function testHealthCheck() {
+            testResults.total++;
+            let result = log('Testing health check...');
+            
+            try {
+                const response = await makeRequest(`${API_BASE_URL}/api/traffic/health`);
+                
+                if (response.ok && response.data.success) {
+                    result += log('✅ Health check passed', 'success');
+                    result += log(`Status: ${response.data.data?.status || response.data.status}`);
+                    testResults.passed++;
+                    updateResult('basic-results', result, 'success');
+                } else {
+                    result += log('❌ Health check failed', 'error');
+                    result += log(`Status: ${response.status} - ${JSON.stringify(response.data)}`);
+                    testResults.failed++;
+                    updateResult('basic-results', result, 'error');
+                }
+            } catch (error) {
+                result += log(`❌ Health check error: ${error.message}`, 'error');
+                testResults.failed++;
+                updateResult('basic-results', result, 'error');
+            }
+            
+            updateSummary();
+        }
+
+        async function testTrafficSimulation() {
+            testResults.total++;
+            let result = log('Testing traffic simulation...');
+            
+            try {
+                const response = await makeRequest(`${API_BASE_URL}/api/traffic/test`, {
+                    method: 'POST',
+                    body: JSON.stringify({ test_type: 'generate_traffic_data' })
+                });
+                
+                if (response.ok && response.status === 200) {
+                    result += log('✅ Traffic simulation test passed', 'success');
+                    testResults.passed++;
+                    updateResult('basic-results', result, 'success');
+                } else {
+                    result += log('❌ Traffic simulation failed', 'error');
+                    result += log(`Status: ${response.status} - ${JSON.stringify(response.data)}`);
+                    testResults.failed++;
+                    updateResult('basic-results', result, 'error');
+                }
+            } catch (error) {
+                result += log(`❌ Traffic simulation error: ${error.message}`, 'error');
+                testResults.failed++;
+                updateResult('basic-results', result, 'error');
+            }
+            
+            updateSummary();
+        }
+
+        async function testErrorHandling() {
+            testResults.total++;
+            let result = log('Testing error handling...');
+            
+            try {
+                const response = await makeRequest(`${API_BASE_URL}/api/traffic/generate`, {
+                    method: 'POST',
+                    body: JSON.stringify({ campaign_id: 'non_existent_campaign' })
+                });
+                
+                if (response.status === 404) {
+                    result += log('✅ Error handling working correctly (404 for non-existent campaign)', 'success');
+                    testResults.passed++;
+                    updateResult('basic-results', result, 'success');
+                } else {
+                    result += log('❌ Error handling failed', 'error');
+                    result += log(`Expected 404, got ${response.status}`);
+                    testResults.failed++;
+                    updateResult('basic-results', result, 'error');
+                }
+            } catch (error) {
+                result += log(`❌ Error handling test error: ${error.message}`, 'error');
+                testResults.failed++;
+                updateResult('basic-results', result, 'error');
+            }
+            
+            updateSummary();
+        }
+
+        async function testProfileListing() {
+            testResults.total++;
+            let result = log('Testing profile listing...');
+            
+            try {
+                const response = await makeRequest(`${API_BASE_URL}/api/profiles/`);
+                
+                if (response.ok && Array.isArray(response.data)) {
+                    result += log('✅ Profile listing passed', 'success');
+                    result += log(`Found ${response.data.length} profiles`);
+                    testResults.passed++;
+                    updateResult('profile-results', result, 'success');
+                } else {
+                    result += log('❌ Profile listing failed', 'error');
+                    result += log(`Status: ${response.status} - ${JSON.stringify(response.data)}`);
+                    testResults.failed++;
+                    updateResult('profile-results', result, 'error');
+                }
+            } catch (error) {
+                result += log(`❌ Profile listing error: ${error.message}`, 'error');
+                testResults.failed++;
+                updateResult('profile-results', result, 'error');
+            }
+            
+            updateSummary();
+        }
+
+        async function testProfileCreation() {
+            testResults.total++;
+            let result = log('Testing profile creation...');
+            
+            const profileData = {
+                name: "Frontend Test Profile",
+                description: "Profile created by frontend compatibility test",
+                demographics: {
+                    age_group: "25-34",
+                    gender: "any",
+                    interests: ["gaming", "social_media"]
+                },
+                device_preferences: {
+                    device_brand: "samsung",
+                    device_models: ["Galaxy S24"],
+                    operating_system: "android"
+                },
+                app_usage: {
+                    preferred_app_categories: ["Games", "Social Networking"],
+                    session_duration_avg_minutes: 45
+                },
+                rtb_specifics: {
+                    preferred_ad_formats: ["banner", "interstitial"],
+                    adid_persistence: "per_user"
+                }
+            };
+            
+            try {
+                const response = await makeRequest(`${API_BASE_URL}/api/profiles/`, {
+                    method: 'POST',
+                    body: JSON.stringify(profileData)
+                });
+                
+                if (response.ok && response.status === 201) {
+                    result += log('✅ Profile creation passed', 'success');
+                    result += log(`Profile ID: ${response.data.id}`);
+                    testProfileId = response.data.id;
+                    testResults.passed++;
+                    updateResult('profile-results', result, 'success');
+                } else {
+                    result += log('❌ Profile creation failed', 'error');
+                    result += log(`Status: ${response.status} - ${JSON.stringify(response.data)}`);
+                    testResults.failed++;
+                    updateResult('profile-results', result, 'error');
+                }
+            } catch (error) {
+                result += log(`❌ Profile creation error: ${error.message}`, 'error');
+                testResults.failed++;
+                updateResult('profile-results', result, 'error');
+            }
+            
+            updateSummary();
+        }
+
+        async function testCampaignListing() {
+            testResults.total++;
+            let result = log('Testing campaign listing...');
+            
+            try {
+                const response = await makeRequest(`${API_BASE_URL}/api/sessions/`);
+                
+                if (response.ok && Array.isArray(response.data)) {
+                    result += log('✅ Campaign listing passed', 'success');
+                    result += log(`Found ${response.data.length} campaigns`);
+                    testResults.passed++;
+                    updateResult('campaign-results', result, 'success');
+                } else {
+                    result += log('❌ Campaign listing failed', 'error');
+                    result += log(`Status: ${response.status} - ${JSON.stringify(response.data)}`);
+                    testResults.failed++;
+                    updateResult('campaign-results', result, 'error');
+                }
+            } catch (error) {
+                result += log(`❌ Campaign listing error: ${error.message}`, 'error');
+                testResults.failed++;
+                updateResult('campaign-results', result, 'error');
+            }
+            
+            updateSummary();
+        }
+
+        async function testCampaignCreation() {
+            if (!testProfileId) {
+                updateResult('campaign-results', '❌ No profile ID available. Create a profile first.', 'error');
+                return;
+            }
+            
+            testResults.total++;
+            let result = log('Testing campaign creation...');
+            
+            const campaignData = {
+                name: "Frontend Test Campaign",
+                target_url: "https://example.com/frontend-test",
+                requests_per_minute: 10,
+                duration_minutes: 1,
+                user_profile_ids: [testProfileId],
+                profile_user_counts: { [testProfileId]: 50 },
+                geo_locations: ["United States"],
+                rtb_config: {
+                    device_brand: "samsung",
+                    device_models: ["Galaxy S24"],
+                    ad_formats: ["banner"],
+                    app_categories: ["IAB9"]
+                }
+            };
+            
+            try {
+                const response = await makeRequest(`${API_BASE_URL}/api/sessions/`, {
+                    method: 'POST',
+                    body: JSON.stringify(campaignData)
+                });
+                
+                if (response.ok && response.status === 200) {
+                    result += log('✅ Campaign creation passed', 'success');
+                    result += log(`Campaign ID: ${response.data.id}`);
+                    testCampaignId = response.data.id;
+                    testResults.passed++;
+                    updateResult('campaign-results', result, 'success');
+                } else {
+                    result += log('❌ Campaign creation failed', 'error');
+                    result += log(`Status: ${response.status} - ${JSON.stringify(response.data)}`);
+                    testResults.failed++;
+                    updateResult('campaign-results', result, 'error');
+                }
+            } catch (error) {
+                result += log(`❌ Campaign creation error: ${error.message}`, 'error');
+                testResults.failed++;
+                updateResult('campaign-results', result, 'error');
+            }
+            
+            updateSummary();
+        }
+
+        async function testCampaignStatusUpdate() {
+            if (!testCampaignId) {
+                updateResult('campaign-results', '❌ No campaign ID available. Create a campaign first.', 'error');
+                return;
+            }
+            
+            testResults.total++;
+            let result = log('Testing campaign status update...');
+            
+            try {
+                const response = await makeRequest(`${API_BASE_URL}/api/traffic/campaigns/${testCampaignId}/status`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ status: 'running' })
+                });
+                
+                if (response.ok && response.status === 200) {
+                    result += log('✅ Campaign status update passed', 'success');
+                    result += log(`New status: ${response.data.new_status}`);
+                    testResults.passed++;
+                    updateResult('campaign-results', result, 'success');
+                } else {
+                    result += log('❌ Campaign status update failed', 'error');
+                    result += log(`Status: ${response.status} - ${JSON.stringify(response.data)}`);
+                    testResults.failed++;
+                    updateResult('campaign-results', result, 'error');
+                }
+            } catch (error) {
+                result += log(`❌ Campaign status update error: ${error.message}`, 'error');
+                testResults.failed++;
+                updateResult('campaign-results', result, 'error');
+            }
+            
+            updateSummary();
+        }
+
+        async function testCampaignInfo() {
+            if (!testCampaignId) {
+                updateResult('campaign-results', '❌ No campaign ID available. Create a campaign first.', 'error');
+                return;
+            }
+            
+            testResults.total++;
+            let result = log('Testing campaign info...');
+            
+            try {
+                const response = await makeRequest(`${API_BASE_URL}/api/traffic/campaigns/${testCampaignId}/info`);
+                
+                if (response.ok && response.data.success) {
+                    result += log('✅ Campaign info passed', 'success');
+                    result += log(`Campaign status: ${response.data.data.basic_info.status}`);
+                    testResults.passed++;
+                    updateResult('campaign-results', result, 'success');
+                } else {
+                    result += log('❌ Campaign info failed', 'error');
+                    result += log(`Status: ${response.status} - ${JSON.stringify(response.data)}`);
+                    testResults.failed++;
+                    updateResult('campaign-results', result, 'error');
+                }
+            } catch (error) {
+                result += log(`❌ Campaign info error: ${error.message}`, 'error');
+                testResults.failed++;
+                updateResult('campaign-results', result, 'error');
+            }
+            
+            updateSummary();
+        }
+
+        async function testTrafficGeneration() {
+            if (!testCampaignId) {
+                updateResult('traffic-results', '❌ No campaign ID available. Create a campaign first.', 'error');
+                return;
+            }
+            
+            testResults.total++;
+            let result = log('Testing traffic generation...');
+            
+            try {
+                const response = await makeRequest(`${API_BASE_URL}/api/traffic/generate`, {
+                    method: 'POST',
+                    body: JSON.stringify({ campaign_id: testCampaignId })
+                });
+                
+                if (response.ok && response.status === 200) {
+                    result += log('✅ Traffic generation started', 'success');
+                    result += log(`Thread ID: ${response.data.thread_id}`);
+                    testResults.passed++;
+                    updateResult('traffic-results', result, 'success');
+                } else {
+                    result += log('❌ Traffic generation failed', 'error');
+                    result += log(`Status: ${response.status} - ${JSON.stringify(response.data)}`);
+                    testResults.failed++;
+                    updateResult('traffic-results', result, 'error');
+                }
+            } catch (error) {
+                result += log(`❌ Traffic generation error: ${error.message}`, 'error');
+                testResults.failed++;
+                updateResult('traffic-results', result, 'error');
+            }
+            
+            updateSummary();
+        }
+
+        async function testTrafficMonitoring() {
+            if (!testCampaignId) {
+                updateResult('traffic-results', '❌ No campaign ID available. Create a campaign first.', 'error');
+                return;
+            }
+            
+            testResults.total++;
+            let result = log('Testing traffic monitoring...');
+            
+            try {
+                const response = await makeRequest(`${API_BASE_URL}/api/traffic/campaigns/${testCampaignId}/info`);
+                
+                if (response.ok && response.data.success) {
+                    const stats = response.data.data.traffic_stats;
+                    result += log('✅ Traffic monitoring passed', 'success');
+                    result += log(`Requests: ${stats.total_requests}, Success: ${stats.successful_requests}`);
+                    testResults.passed++;
+                    updateResult('traffic-results', result, 'success');
+                } else {
+                    result += log('❌ Traffic monitoring failed', 'error');
+                    result += log(`Status: ${response.status} - ${JSON.stringify(response.data)}`);
+                    testResults.failed++;
+                    updateResult('traffic-results', result, 'error');
+                }
+            } catch (error) {
+                result += log(`❌ Traffic monitoring error: ${error.message}`, 'error');
+                testResults.failed++;
+                updateResult('traffic-results', result, 'error');
+            }
+            
+            updateSummary();
+        }
+
+        async function testTrafficStop() {
+            if (!testCampaignId) {
+                updateResult('traffic-results', '❌ No campaign ID available. Create a campaign first.', 'error');
+                return;
+            }
+            
+            testResults.total++;
+            let result = log('Testing traffic stop...');
+            
+            try {
+                const response = await makeRequest(`${API_BASE_URL}/api/traffic/stop/${testCampaignId}`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok && response.status === 200) {
+                    result += log('✅ Traffic stop passed', 'success');
+                    testResults.passed++;
+                    updateResult('traffic-results', result, 'success');
+                } else {
+                    result += log('❌ Traffic stop failed', 'error');
+                    result += log(`Status: ${response.status} - ${JSON.stringify(response.data)}`);
+                    testResults.failed++;
+                    updateResult('traffic-results', result, 'error');
+                }
+            } catch (error) {
+                result += log(`❌ Traffic stop error: ${error.message}`, 'error');
+                testResults.failed++;
+                updateResult('traffic-results', result, 'error');
+            }
+            
+            updateSummary();
+        }
+
+        async function testTrafficCleanup() {
+            if (!testCampaignId) {
+                updateResult('traffic-results', '❌ No campaign ID available. Create a campaign first.', 'error');
+                return;
+            }
+            
+            testResults.total++;
+            let result = log('Testing traffic cleanup...');
+            
+            try {
+                const response = await makeRequest(`${API_BASE_URL}/api/traffic/cleanup/${testCampaignId}`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok && response.status === 200) {
+                    result += log('✅ Traffic cleanup passed', 'success');
+                    testResults.passed++;
+                    updateResult('traffic-results', result, 'success');
+                } else {
+                    result += log('❌ Traffic cleanup failed', 'error');
+                    result += log(`Status: ${response.status} - ${JSON.stringify(response.data)}`);
+                    testResults.failed++;
+                    updateResult('traffic-results', result, 'error');
+                }
+            } catch (error) {
+                result += log(`❌ Traffic cleanup error: ${error.message}`, 'error');
+                testResults.failed++;
+                updateResult('traffic-results', result, 'error');
+            }
+            
+            updateSummary();
+        }
+    </script>
+</body>
+</html> 
