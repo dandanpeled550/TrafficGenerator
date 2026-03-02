@@ -38,8 +38,8 @@ class UserProfile:
         'adid_persistence': 'per_user'
     })
     referrers: Dict = field(default_factory=dict)
-    created_at: str = field(default_factory=lambda: str(uuid.uuid4()))
-    updated_at: str = field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
 @bp.route('/', methods=['POST'])
 def create_profile():
@@ -118,7 +118,7 @@ def update_profile(profile_id):
         profile.app_usage = data.get('app_usage', profile.app_usage)
         profile.rtb_specifics = data.get('rtb_specifics', profile.rtb_specifics)
         profile.referrers = data.get('referrers', profile.referrers)
-        profile.updated_at = str(uuid.uuid4())
+        profile.updated_at = datetime.utcnow().isoformat()
         logger.info(f"[Profile] Updated: {profile}")
         return jsonify(profile.__dict__)
     except Exception as e:

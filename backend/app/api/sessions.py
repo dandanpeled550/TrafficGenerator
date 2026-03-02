@@ -1,3 +1,5 @@
+import uuid
+import threading
 from flask import Blueprint, request, jsonify
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
@@ -166,7 +168,7 @@ def create_session():
         if invalid_ids:
             return jsonify({"error": f"Invalid user_profile_ids: {invalid_ids}"}), 400
 
-        session_id = f"session_{len(sessions) + 1}"
+        session_id = str(uuid.uuid4())
         
         # Ensure rtb_config has all required fields
         rtb_config = data.get('rtb_config', {})
@@ -186,9 +188,6 @@ def create_session():
 
         # Calculate total profile users
         total_profile_users = sum(profile_user_counts.values())
-        
-        # Generate campaign-specific referrers based on assigned profiles and geo locations
-        campaign_referrers = generate_campaign_referrers(user_profile_ids, data.get('geo_locations', ["United States"]))
         
         new_session = Session(
             id=session_id,
@@ -210,10 +209,28 @@ def create_session():
             log_format=data.get('log_format'),
             user_agents=data.get('user_agents', []),
             referrers=data.get('referrers', []),
-            campaign_referrers=campaign_referrers
+            campaign_referrers=None  # populated asynchronously below
         )
         new_session = ensure_datetime_fields(new_session)
         sessions[session_id] = new_session
+
+        # Generate campaign-specific referrers in the background so the HTTP
+        # response is not blocked by (potentially slow) OpenAI calls.
+        def _gen_referrers(sid, profile_ids, geo_locs):
+            try:
+                referrers = generate_campaign_referrers(profile_ids, geo_locs)
+                if sid in sessions:
+                    sessions[sid].campaign_referrers = referrers
+                    logger.info(f"[Session] Referrers populated for {sid} ({len(referrers)} combos)")
+            except Exception as exc:
+                logger.warning(f"[Session] Background referrer generation failed for {sid}: {exc}")
+
+        threading.Thread(
+            target=_gen_referrers,
+            args=(session_id, user_profile_ids, data.get('geo_locations', ["United States"])),
+            daemon=True,
+        ).start()
+
         logger.info(f"[Session] Created: {new_session.to_dict()}")
         return jsonify(new_session.to_dict())
     except Exception as e:
@@ -222,42 +239,43 @@ def create_session():
 
 @bp.route("/", methods=['GET'])
 def list_sessions():
-    """List all traffic sessions, updating total_requests and successful_requests from traffic files"""
+    """List all traffic sessions, updating total_requests and successful_requests."""
     import os
     import json
-    from app.api.traffic import TRAFFIC_DATA_DIR
+    from app.api.traffic import TRAFFIC_DATA_DIR, campaign_stats
     try:
         logger.info("[Session] List all request received")
         session_dicts = []
         for session in sessions.values():
-            # Try to update total_requests and successful_requests from traffic file
             campaign_id = session.id
-            campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
-            if os.path.exists(campaign_file):
-                try:
-                    with open(campaign_file, 'r') as f:
-                        traffic_data = json.load(f)
-                    
-                    # Handle both old list format and new object format
-                    if isinstance(traffic_data, list):
-                        # Old format - list of requests
-                        session.total_requests = len(traffic_data)
-                        session.successful_requests = sum(1 for entry in traffic_data if entry.get('success', False))
-                    elif isinstance(traffic_data, dict):
-                        # New format - object with request IDs as keys
-                        session.total_requests = len(traffic_data)
-                        session.successful_requests = sum(1 for entry in traffic_data.values() if entry.get('success', False))
-                    else:
-                        logger.warning(f"Unknown traffic data format in sessions: {type(traffic_data)}")
+            # Prefer in-memory live stats (no file I/O) for running campaigns.
+            live = campaign_stats.get(campaign_id)
+            if live is not None:
+                session.total_requests = live["total"]
+                session.successful_requests = live["successful"]
+            else:
+                # Fall back to file scan for completed/stopped campaigns.
+                campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
+                if os.path.exists(campaign_file):
+                    try:
+                        with open(campaign_file, 'r') as f:
+                            traffic_data = json.load(f)
+                        if isinstance(traffic_data, list):
+                            session.total_requests = len(traffic_data)
+                            session.successful_requests = sum(1 for e in traffic_data if e.get('success', False))
+                        elif isinstance(traffic_data, dict):
+                            session.total_requests = len(traffic_data)
+                            session.successful_requests = sum(1 for e in traffic_data.values() if e.get('success', False))
+                        else:
+                            session.total_requests = 0
+                            session.successful_requests = 0
+                    except Exception as e:
+                        logger.warning(f"Could not read traffic file for session {campaign_id}: {e}")
                         session.total_requests = 0
                         session.successful_requests = 0
-                except Exception as e:
-                    logger.warning(f"Could not read traffic file for session {campaign_id}: {e}")
+                else:
                     session.total_requests = 0
                     session.successful_requests = 0
-            else:
-                session.total_requests = 0
-                session.successful_requests = 0
             session_dicts.append(session.to_dict())
         logger.info(f"[Session] Listed all sessions: count={len(session_dicts)}")
         return jsonify(session_dicts)
@@ -339,8 +357,27 @@ def update_session(session_id: str):
             should_regenerate_referrers = True
         
         if should_regenerate_referrers:
-            logger.info(f"[Session] Regenerating campaign referrers due to profile or geo location changes")
-            session.campaign_referrers = generate_campaign_referrers(session.user_profile_ids, session.geo_locations)
+            logger.info(f"[Session] Scheduling background referrer regeneration for session {session_id}")
+            # Clear stale referrers immediately so traffic doesn't use old data
+            session.campaign_referrers = None
+            sid = session_id
+            profile_ids = list(session.user_profile_ids)
+            geo_locs = list(session.geo_locations)
+
+            def _regen_referrers(s_id, p_ids, g_locs):
+                try:
+                    referrers = generate_campaign_referrers(p_ids, g_locs)
+                    if s_id in sessions:
+                        sessions[s_id].campaign_referrers = referrers
+                        logger.info(f"[Session] Referrers regenerated for {s_id} ({len(referrers)} combos)")
+                except Exception as exc:
+                    logger.warning(f"[Session] Background referrer regeneration failed for {s_id}: {exc}")
+
+            threading.Thread(
+                target=_regen_referrers,
+                args=(sid, profile_ids, geo_locs),
+                daemon=True,
+            ).start()
         
         # Update other fields if provided
         for field, value in data.items():

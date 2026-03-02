@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import backendClient from "@/api/backendClient";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
@@ -21,25 +21,52 @@ import StatsCard from "../components/dashboard/StatsCard";
 import ActiveSessions from "../components/dashboard/ActiveSessions";
 import RealTimeChart from "../components/dashboard/RealTimeChart";
 
+// Build a 12-bucket timeline of request counts over the last hour, using
+// session creation times as a proxy for when traffic was generated.
+function buildChartData(sessions) {
+  const now = new Date();
+  const BUCKETS = 12;
+  const BUCKET_MS = 5 * 60 * 1000; // 5 minutes
+  const data = [];
+  for (let i = BUCKETS - 1; i >= 0; i--) {
+    const bucketEnd = new Date(now.getTime() - i * BUCKET_MS);
+    const bucketStart = new Date(bucketEnd.getTime() - BUCKET_MS);
+    const requests = sessions
+      .filter(s => {
+        if (!s.created_at) return false;
+        const d = new Date(s.created_at);
+        return d >= bucketStart && d < bucketEnd;
+      })
+      .reduce((sum, s) => sum + (s.total_requests || 0), 0);
+    data.push({
+      time: bucketEnd.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+      requests,
+    });
+  }
+  return data;
+}
+
 export default function Dashboard() {
   const [sessions, setSessions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [chartData, setChartData] = useState([]);
   const [backendStatus, setBackendStatus] = useState('checking');
+  const pollingRef = useRef(null);
 
-  useEffect(() => {
-    loadSessions();
-    generateMockChartData();
-    checkBackendConnection();
-
-    const interval = setInterval(() => {
-      checkBackendConnection();
-    }, 10000); // Check every 10 seconds
-
-    return () => clearInterval(interval); // Clean up interval on unmount
+  const loadSessions = useCallback(async (silent = false) => {
+    if (!silent) setIsLoading(true);
+    try {
+      const data = await backendClient.sessions.list();
+      setSessions(data);
+      setChartData(buildChartData(data));
+    } catch (error) {
+      console.error("Failed to load sessions:", error);
+      setSessions([]);
+    }
+    if (!silent) setIsLoading(false);
   }, []);
 
-  const checkBackendConnection = async () => {
+  const checkBackendConnection = useCallback(async () => {
     try {
       await backendClient.checkConnection();
       setBackendStatus('connected');
@@ -47,32 +74,26 @@ export default function Dashboard() {
       console.error("Backend connection check failed:", error);
       setBackendStatus('disconnected');
     }
-  };
+  }, []);
 
-  const loadSessions = async () => {
-    setIsLoading(true);
-    try {
-      const data = await backendClient.sessions.list();
-      setSessions(data);
-    } catch (error) {
-      console.error("Failed to load sessions:", error);
-      setSessions([]);
-    }
-    setIsLoading(false);
-  };
+  useEffect(() => {
+    loadSessions();
+    checkBackendConnection();
+    const healthInterval = setInterval(checkBackendConnection, 10000);
+    return () => clearInterval(healthInterval);
+  }, [loadSessions, checkBackendConnection]);
 
-  const generateMockChartData = () => {
-    const data = [];
-    const now = new Date();
-    for (let i = 11; i >= 0; i--) {
-      const time = new Date(now.getTime() - i * 5 * 60 * 1000);
-      data.push({
-        time: time.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-        requests: Math.floor(Math.random() * 50) + 10
-      });
+  // Poll every 5 seconds when there are running campaigns
+  useEffect(() => {
+    const hasRunning = sessions.some(s => s.status === 'running');
+    if (pollingRef.current) clearInterval(pollingRef.current);
+    if (hasRunning) {
+      pollingRef.current = setInterval(() => loadSessions(true), 5000);
     }
-    setChartData(data);
-  };
+    return () => {
+      if (pollingRef.current) clearInterval(pollingRef.current);
+    };
+  }, [sessions, loadSessions]);
 
   const handleSessionAction = async (sessionId, action) => {
     const session = sessions.find(s => s.id === sessionId);
@@ -105,7 +126,11 @@ export default function Dashboard() {
 
   const activeSessions = sessions.filter(s => ['running', 'paused'].includes(s.status));
   const totalRequests = sessions.reduce((sum, s) => sum + (s.total_requests || 0), 0);
+  const totalSuccessful = sessions.reduce((sum, s) => sum + (s.successful_requests || 0), 0);
   const runningCount = sessions.filter(s => s.status === 'running').length;
+  const successRate = totalRequests > 0
+    ? ((totalSuccessful / totalRequests) * 100).toFixed(1) + '%'
+    : '—';
 
   return (
     <div className="min-h-screen p-6">
@@ -169,20 +194,16 @@ export default function Dashboard() {
           />
           <StatsCard
             title="Success Rate"
-            value="98.5%"
+            value={successRate}
             icon={CheckCircle}
-            trend="up"
-            trendValue="0.3%"
             gradientFrom="from-purple-500"
             gradientTo="to-pink-500"
             delay={0.2}
           />
           <StatsCard
-            title="Avg Response"
-            value="245ms"
+            title="Total Sessions"
+            value={sessions.length}
             icon={Clock}
-            trend="down"
-            trendValue="12ms"
             gradientFrom="from-orange-500"
             gradientTo="to-red-500"
             delay={0.3}

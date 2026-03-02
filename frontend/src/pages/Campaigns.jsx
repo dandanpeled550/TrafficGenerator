@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import backendClient from "@/api/backendClient";
+import { getStatusColor } from "@/utils/statusHelpers";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -37,44 +38,18 @@ const CampaignCard = ({ campaign, onDelete, onStatusChange }) => {
   const [isStopping, setIsStopping] = useState(false);
   const [isResuming, setIsResuming] = useState(false);
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'running':
-        return 'bg-green-500/20 text-green-400 border-green-500/30';
-      case 'paused':
-        return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-      case 'completed':
-        return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-      case 'stopped':
-        return 'bg-red-500/20 text-red-400 border-red-500/30';
-      case 'draft':
-        return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
-      default:
-        return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
-    }
-  };
-
   const handleStartCampaign = async () => {
-    console.log('[DEBUG] handleStartCampaign in Campaigns.jsx triggered');
     setIsStarting(true);
     try {
-      console.log('[DEBUG] About to update campaign status');
       await backendClient.traffic.updateCampaignStatus(campaign.id, 'running');
-      console.log('[DEBUG] Status updated, preparing to start traffic generation');
-      const trafficConfig = { campaign_id: campaign.id }; // Only send the ID
-      console.log('[DEBUG] About to call backendClient.traffic.generate with:', trafficConfig);
-      const result = await backendClient.traffic.generate(trafficConfig);
-      console.log('[DEBUG] backendClient.traffic.generate result:', result);
-      if (result.success) {
-        console.log('[DEBUG] Traffic generation started successfully');
-      } else {
-        console.error('[DEBUG] Failed to start traffic generation:', result.error);
+      const result = await backendClient.traffic.generate({ campaign_id: campaign.id });
+      if (!result.success) {
+        console.error('Failed to start traffic generation:', result.error);
       }
     } catch (error) {
-      console.error('[DEBUG] Error in handleStartCampaign in Campaigns.jsx:', error);
+      console.error('Error starting campaign:', error);
     } finally {
       setIsStarting(false);
-      console.log('[DEBUG] handleStartCampaign in Campaigns.jsx finished');
     }
   };
 

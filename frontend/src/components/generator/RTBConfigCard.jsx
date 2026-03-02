@@ -5,34 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Smartphone, Target, Zap, Users } from "lucide-react";
-
-const SAMSUNG_MODELS = [
-  "Galaxy S24 Ultra", "Galaxy S24+", "Galaxy S24",
-  "Galaxy S23 Ultra", "Galaxy S23+", "Galaxy S23",
-  "Galaxy A54 5G", "Galaxy A34 5G", "Galaxy A14",
-  "Galaxy Tab S9 Ultra", "Galaxy Tab S9+", "Galaxy Tab S9",
-  "Galaxy Note 20 Ultra", "Galaxy Fold 5", "Galaxy Flip 5"
-];
-
-const AD_FORMATS = [
-  { value: "banner", label: "Banner Ads", description: "Standard display banners" },
-  { value: "interstitial", label: "Interstitial", description: "Full-screen ads" },
-  { value: "video", label: "Video Ads", description: "In-stream video content" },
-  { value: "native", label: "Native Ads", description: "In-feed native content" },
-  { value: "rewarded", label: "Rewarded Video", description: "Incentivized video ads" }
-];
-
-const APP_CATEGORIES = [
-  "Games", "Social Media", "Shopping", "News", "Entertainment",
-  "Finance", "Health & Fitness", "Travel", "Education", "Productivity"
-];
-
-const AGE_GROUPS = ["18-24", "25-34", "35-44", "45-54", "55-64", "65+"];
-const GENDERS = ["Male", "Female", "Other"];
-const INTERESTS = [
-  "Technology", "Gaming", "Sports", "Fashion", "Travel",
-  "Food", "Music", "Movies", "Books", "Fitness"
-];
+import { SAMSUNG_MODELS, AD_FORMATS, APP_CATEGORIES } from "@/constants/rtbConstants";
 
 export default function RTBConfigCard({ formData, onInputChange, profilesSelected }) {
   // Initialize default values if not present

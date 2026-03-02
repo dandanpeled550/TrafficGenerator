@@ -11,8 +11,20 @@ from .logging_config import get_logger
 import uuid
 from app.api.sessions import sessions
 from app.api.profiles import profiles
-from faker import Faker
-import string
+
+# Service layer imports — pure, stateless helpers
+from app.services.file_service import (
+    TRAFFIC_DATA_DIR as _FILE_SVC_TRAFFIC_DATA_DIR,
+    MAX_FILE_SIZE as _FILE_SVC_MAX_FILE_SIZE,
+    append_campaign_log,
+    fix_corrupted_traffic_file,
+    append_traffic_to_file,
+)
+from app.services.rtb_service import (
+    generate_adid,
+    generate_rtb_data as _rtb_generate_rtb_data,
+    simulate_request,
+)
 
 # Define the Blueprint before any route decorators
 bp = Blueprint('traffic', __name__)
@@ -28,163 +40,22 @@ CAMPAIGN_EVENTS_LOG_PATH = os.path.join(LOGS_DIR, 'campaign_events.log')
 # Set up a custom logger for campaign/session events
 campaign_logger = get_logger('Campaign')
 
-# Global variables
-TRAFFIC_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'traffic')
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB max file size
+# Re-export TRAFFIC_DATA_DIR and MAX_FILE_SIZE from the service layer so the
+# rest of this module (and any external importers) can continue to use them.
+TRAFFIC_DATA_DIR = _FILE_SVC_TRAFFIC_DATA_DIR
+MAX_FILE_SIZE = _FILE_SVC_MAX_FILE_SIZE
 
-# Ensure traffic data directory exists and is writable
-try:
-    os.makedirs(TRAFFIC_DATA_DIR, exist_ok=True)
-    # Test write permissions
-    test_file = os.path.join(TRAFFIC_DATA_DIR, '.test')
-    with open(test_file, 'w') as f:
-        f.write('test')
-    os.remove(test_file)
-    logger.info(f"Traffic data directory {TRAFFIC_DATA_DIR} is writable")
-except Exception as e:
-    logger.error(f"Error setting up traffic data directory: {str(e)}")
-    raise
-
-# Add after other global variables
-active_threads = {}
-thread_locks = {}
+# Orchestration globals
+active_threads: Dict[str, str] = {}
+thread_locks: Dict[str, threading.Lock] = {}
 
 # Global dict to store ADIDs per campaign/profile
-campaign_adids = {}
+campaign_adids: Dict[str, Dict] = {}
 
-def append_campaign_log(campaign_id, message):
-    """Append a detailed log message to the campaign's log file."""
-    campaign_dir = os.path.join(TRAFFIC_DATA_DIR, campaign_id)
-    os.makedirs(campaign_dir, exist_ok=True)
-    log_file = os.path.join(campaign_dir, 'logs.txt')
-    with open(log_file, 'a') as f:
-        f.write(message + '\n')
-
-
-
-def fix_corrupted_traffic_file(campaign_id: str) -> bool:
-    """Fix corrupted traffic file by converting array to object structure or recreating if needed"""
-    try:
-        campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
-        
-        if not os.path.exists(campaign_file):
-            # Create new file with correct structure
-            with open(campaign_file, 'w') as f:
-                json.dump({}, f)
-            logger.info(f"[File Fix] Created new traffic file for campaign {campaign_id}")
-            return True
-        
-        # Read current file
-        with open(campaign_file, 'r') as f:
-            try:
-                current_data = json.load(f)
-            except json.JSONDecodeError:
-                logger.warning(f"[File Fix] Corrupted JSON in campaign {campaign_id}, recreating file")
-                with open(campaign_file, 'w') as f:
-                    json.dump({}, f)
-                return True
-        
-        # Check if it's the old array structure
-        if isinstance(current_data, list):
-            logger.info(f"[File Fix] Converting old array structure to object structure for campaign {campaign_id}")
-            # Convert array to object
-            converted_data = {}
-            for entry in current_data:
-                request_id = entry.get('id', f"request_{len(converted_data)}")
-                converted_data[request_id] = entry
-            
-            # Save converted structure
-            with open(campaign_file, 'w') as f:
-                json.dump(converted_data, f, indent=2)
-            logger.info(f"[File Fix] Successfully converted file structure for campaign {campaign_id}")
-            return True
-        
-        # Check if it's already the correct object structure
-        if isinstance(current_data, dict):
-            logger.info(f"[File Fix] File structure is already correct for campaign {campaign_id}")
-            return True
-        
-        # Unknown structure, recreate file
-        logger.warning(f"[File Fix] Unknown file structure for campaign {campaign_id}, recreating file")
-        with open(campaign_file, 'w') as f:
-            json.dump({}, f)
-        return True
-        
-    except Exception as e:
-        logger.error(f"[File Fix] Error fixing traffic file for campaign {campaign_id}: {e}")
-        return False
-
-def append_traffic_to_file(campaign_id: str, traffic_data: Dict[str, Any]):
-    """Append traffic data to campaign-specific file with improved error handling"""
-    max_retries = 3
-    retry_delay = 1  # seconds
-    
-    for attempt in range(max_retries):
-        try:
-            campaign_file = os.path.join(TRAFFIC_DATA_DIR, campaign_id, 'traffic.json')
-            
-            # Ensure campaign directory exists
-            os.makedirs(os.path.dirname(campaign_file), exist_ok=True)
-            
-            # Get thread lock for this campaign
-            lock = thread_locks.get(campaign_id)
-            if not lock:
-                lock = threading.Lock()
-                thread_locks[campaign_id] = lock
-            
-            with lock:
-                # Check if file exists and create if it doesn't
-                if not os.path.exists(campaign_file):
-                    with open(campaign_file, 'w') as f:
-                        json.dump({}, f)
-
-                # Check file size and rotate if needed
-                if os.path.exists(campaign_file) and os.path.getsize(campaign_file) > MAX_FILE_SIZE:
-                    backup_file = f"{campaign_file}.{int(time.time())}.bak"
-                    os.rename(campaign_file, backup_file)
-                    with open(campaign_file, 'w') as f:
-                        json.dump({}, f)
-
-                # Read and write with proper error handling
-                with open(campaign_file, 'r+') as f:
-                    try:
-                        data = json.load(f)
-                    except json.JSONDecodeError:
-                        data = {}
-                    
-                    # Check if data is still in old list format and convert it
-                    if isinstance(data, list):
-                        logger.info(f"[File Operation] Converting old list structure to object structure for campaign {campaign_id}")
-                        converted_data = {}
-                        for entry in data:
-                            entry_id = entry.get('id', f"request_{len(converted_data)}")
-                            converted_data[entry_id] = entry
-                        data = converted_data
-                        logger.info(f"[File Operation] Successfully converted {len(converted_data)} entries")
-                    
-                    # Ensure data is a dictionary
-                    if not isinstance(data, dict):
-                        logger.error(f"[File Operation] Data is not a dictionary after conversion: {type(data)}")
-                        raise ValueError(f"Invalid data structure: expected dict, got {type(data)}")
-                    
-                    # Save each request as a separate entity using its ID as the key
-                    request_id = traffic_data.get('id', f"request_{int(time.time() * 1000)}")
-                    data[request_id] = traffic_data
-                    
-                    f.seek(0)
-                    json.dump(data, f, indent=2)
-                    f.truncate()
-                
-                return True
-                
-        except Exception as e:
-            logger.error(f"[File Operation] Error appending traffic data (attempt {attempt + 1}/{max_retries}): {str(e)}", exc_info=True)
-            if attempt < max_retries - 1:
-                time.sleep(retry_delay)
-            else:
-                raise
-    
-    return False
+# In-memory incremental stats — avoids O(n) file reads on every request iteration.
+# Keys: campaign_id → {"total": int, "successful": int, "start_time": datetime|None,
+#                      "response_times": list[float]}
+campaign_stats: Dict[str, Dict] = {}
 
 @dataclass
 class TrafficConfig:
@@ -277,7 +148,7 @@ def generate_traffic_background(config: TrafficConfig, thread_id: str):
             os.makedirs(campaign_dir, exist_ok=True)
             if not os.path.exists(campaign_file):
                 with open(campaign_file, 'w') as f:
-                    json.dump([], f)
+                    json.dump({}, f)
             logger.info(f"[Traffic Generation] Campaign directory and file setup completed: {campaign_file}")
         except Exception as e:
             logger.error(f"[Traffic Generation] Error setting up campaign directory: {str(e)}", exc_info=True)
@@ -301,6 +172,15 @@ def generate_traffic_background(config: TrafficConfig, thread_id: str):
         end_time = start_time + timedelta(minutes=config.duration_minutes) if config.duration_minutes else None
         config.end_time = end_time
 
+        # Seed the in-memory stats counter for this campaign so update_campaign_status
+        # can read running totals without doing an O(n) file scan on every iteration.
+        campaign_stats[config.campaign_id] = {
+            "total": 0,
+            "successful": 0,
+            "start_time": start_time,
+            "response_times": [],
+        }
+
         logger.info(f"[Traffic Generation] Start time: {start_time}, End time: {end_time}")
 
         # Update campaign status to running
@@ -311,13 +191,16 @@ def generate_traffic_background(config: TrafficConfig, thread_id: str):
             "traffic_generation_active": True
         })
 
-        # Generate ADIDs for each profile in the campaign if not already present
-        if config.campaign_id not in campaign_adids:
-            campaign_adids[config.campaign_id] = {}
-        for pid in config.user_profile_ids:
-            user_count = config.profile_user_counts.get(pid, 0)
-            if user_count > 0 and pid not in campaign_adids[config.campaign_id]:
-                campaign_adids[config.campaign_id][pid] = [generate_adid() for _ in range(user_count)]
+        # Generate ADIDs for each profile in the campaign if not already present.
+        # Hold the campaign lock to prevent concurrent threads from racing on the
+        # shared campaign_adids dict.
+        with thread_locks[config.campaign_id]:
+            if config.campaign_id not in campaign_adids:
+                campaign_adids[config.campaign_id] = {}
+            for pid in config.user_profile_ids:
+                user_count = config.profile_user_counts.get(pid, 0)
+                if user_count > 0 and pid not in campaign_adids[config.campaign_id]:
+                    campaign_adids[config.campaign_id][pid] = [generate_adid() for _ in range(user_count)]
 
         user_stopped = False
         # Main traffic generation loop with improved error handling
@@ -360,9 +243,18 @@ def generate_traffic_background(config: TrafficConfig, thread_id: str):
                 try:
                     if append_traffic_to_file(config.campaign_id, response_data):
                         request_count += 1
-                        if response_data.get('success'):
+                        is_success = bool(response_data.get('success'))
+                        if is_success:
                             successful_requests += 1
-                        campaign_logger.info(f"[Session {config.campaign_id}] Request {request_count} {'SUCCESS' if response_data.get('success') else 'FAIL'}.")
+                        # Update in-memory stats incrementally (no file read needed)
+                        stats = campaign_stats.get(config.campaign_id)
+                        if stats is not None:
+                            stats["total"] = request_count
+                            stats["successful"] = successful_requests
+                            rt = response_data.get("response_time")
+                            if rt is not None:
+                                stats["response_times"].append(rt)
+                        campaign_logger.info(f"[Session {config.campaign_id}] Request {request_count} {'SUCCESS' if is_success else 'FAIL'}.")
                         append_campaign_log(config.campaign_id, f"REQUEST {request_count}: {response_data}")
                     else:
                         campaign_logger.error(f"[Session {config.campaign_id}] Failed to save request {request_count + 1}.")
@@ -442,6 +334,8 @@ def generate_traffic_background(config: TrafficConfig, thread_id: str):
                 del thread_locks[config.campaign_id]
                 campaign_logger.info(f"[Session {config.campaign_id}] Removed thread lock.")
                 append_campaign_log(config.campaign_id, f"CLEANUP: Removed thread lock at {datetime.utcnow().isoformat()}")
+            # Remove in-memory stats — campaign is no longer active
+            campaign_stats.pop(config.campaign_id, None)
         except Exception as e:
             campaign_logger.error(f"[Session {config.campaign_id}] Error cleaning up resources: {str(e)}")
             append_campaign_log(config.campaign_id, f"ERROR: Exception cleaning up resources: {str(e)}")
@@ -614,72 +508,8 @@ def generate_traffic():
         logger.error(f"[API] {error_msg}", exc_info=True)
         return jsonify({"error": error_msg}), 500
 
-def generate_rtb_data(rtb_config: Optional[Dict[str, Any]], config: Optional[TrafficConfig] = None) -> Dict[str, Any]:
-    fake = Faker()
-    if not rtb_config:
-        return None
-    try:
-        # Pick a profile for this request
-        user_id = None
-        adid = None
-        profile_id = None
-        if config and config.user_profile_ids:
-            # Weighted random pick based on profile_user_counts
-            weighted_profiles = []
-            for pid in config.user_profile_ids:
-                count = config.profile_user_counts.get(pid, 0)
-                weighted_profiles.extend([pid] * count)
-            if weighted_profiles:
-                profile_id = random.choice(weighted_profiles)
-                # Pick an ADID for this profile
-                adid_list = campaign_adids.get(config.campaign_id, {}).get(profile_id, [])
-                if adid_list:
-                    adid = random.choice(adid_list)
-                    user_id = adid
-        # --- imp section ---
-        imp = [{
-            "id": "1",
-            "banner": {
-                "w": rtb_config.get("banner_w", 300),
-                "h": rtb_config.get("banner_h", 250)
-            },
-            "bidfloor": rtb_config.get("bidfloor", 0.03),
-            "bidfloorcur": rtb_config.get("bidfloorcur", "USD")
-        }]
-        # --- site section ---
-        site = {
-            "id": rtb_config.get("site_id", "site123"),
-            "name": rtb_config.get("site_name", "Example Site"),
-            "domain": rtb_config.get("site_domain", "example.com")
-        }
-        # --- device section ---
-        device = {
-            "ua": rtb_config.get("ua", fake.user_agent()),
-            "ip": rtb_config.get("ip", fake.ipv4())
-        }
-        # --- user section ---
-        user = {
-            "id": user_id or rtb_config.get("user_id", "user123")
-        }
-        # --- top-level fields ---
-        rtb_data = {
-            "id": ''.join(random.choices(string.digits, k=10)),
-            "imp": imp,
-            "site": site,
-            "device": device,
-            "user": user,
-            "at": rtb_config.get("at", 2),
-            "tmax": rtb_config.get("tmax", 120),
-            "cur": rtb_config.get("cur", ["USD"])
-        }
-        return rtb_data
-    except Exception as e:
-        logger.error(f"Error generating RTB data: {str(e)}", exc_info=True)
-        return {}
-
 def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
-    """Generate a single traffic data entry with improved validation and LLM referrer assignment"""
-    import random
+    """Generate a single traffic data entry with LLM referrer assignment."""
     try:
         if not isinstance(config, TrafficConfig):
             raise ValueError("Invalid config type")
@@ -695,65 +525,58 @@ def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
             "config": config.config,
             "user_profile_ids": config.user_profile_ids,
             "profile_user_counts": config.profile_user_counts,
-            "total_profile_users": config.total_profile_users
+            "total_profile_users": config.total_profile_users,
         }
-        required_fields = ["id", "timestamp", "campaign_id", "target_url"]
-        for field in required_fields:
+        for field in ["id", "timestamp", "campaign_id", "target_url"]:
             if not traffic_data.get(field):
                 raise ValueError(f"Missing required field: {field}")
 
-        # --- LLM Referrer Assignment ---
-        # Build weighted list of user profiles
+        # --- Profile + ADID selection ---
         weighted_profiles = []
-        profile_id_to_profile = {}
         for profile in (config.user_profiles or []):
             pid = profile.get("id")
             count = config.profile_user_counts.get(pid, 0)
             if count > 0:
                 weighted_profiles.extend([profile] * count)
-                profile_id_to_profile[pid] = profile
+
         selected_profile = random.choice(weighted_profiles) if weighted_profiles else None
         selected_profile_id = selected_profile.get("id") if selected_profile else None
-        # Pick random interest and country
+
+        # Pick the ADID here so it can be passed to the stateless RTB service
+        selected_adid = None
+        if selected_profile_id:
+            adid_list = campaign_adids.get(config.campaign_id, {}).get(selected_profile_id, [])
+            if adid_list:
+                selected_adid = random.choice(adid_list)
+
+        # --- LLM Referrer Assignment ---
         interests = (selected_profile.get("demographics", {}).get("interests") or []) if selected_profile else []
         countries = (selected_profile.get("demographics", {}).get("countries") or []) if selected_profile else []
         selected_interest = random.choice(interests) if interests else None
         selected_country = random.choice(countries) if countries else None
-        # Get referrer list for this interest|country
         referrer_key = f"{selected_interest}|{selected_country}" if selected_interest and selected_country else None
-        
-        # Try to use campaign-specific referrers first, fall back to profile referrers
+
         selected_referrer = None
         if referrer_key:
-            # Check campaign referrers first
             if config.campaign_referrers and referrer_key in config.campaign_referrers:
-                campaign_referrers = config.campaign_referrers[referrer_key]
-                if campaign_referrers:
-                    selected_referrer = random.choice(campaign_referrers)
-                    logger.debug(f"Using campaign-specific referrer for {referrer_key}")
-            
-            # Fall back to profile referrers if campaign referrers not available
-            if not selected_referrer:
-                profile_referrers = (selected_profile.get("referrers", {}).get(referrer_key, [])) if selected_profile else []
-                if profile_referrers:
-                    selected_referrer = random.choice(profile_referrers)
-                    logger.debug(f"Using profile referrer for {referrer_key}")
-        
-        # Add to traffic_data
+                campaign_refs = config.campaign_referrers[referrer_key]
+                if campaign_refs:
+                    selected_referrer = random.choice(campaign_refs)
+            if not selected_referrer and selected_profile:
+                profile_refs = selected_profile.get("referrers", {}).get(referrer_key, [])
+                if profile_refs:
+                    selected_referrer = random.choice(profile_refs)
+
         traffic_data["selected_profile_id"] = selected_profile_id
         traffic_data["selected_interest"] = selected_interest
         traffic_data["selected_country"] = selected_country
         traffic_data["referrer"] = selected_referrer
 
-        # Add RTB data in OpenRTB format - restructured with RTB_ID as separate nodes
+        # --- RTB data (via stateless service layer) ---
         if config.rtb_config:
-            rtb_data = generate_rtb_data(config.rtb_config, config)
+            rtb_data = _rtb_generate_rtb_data(config.rtb_config, user_id=selected_adid)
             if rtb_data:
-                # Extract RTB_ID and restructure data
-                rtb_id = rtb_data.get("id", "unknown")
-                
-                # Store RTB data with RTB_ID as separate nodes for easy table splitting
-                traffic_data["rtb_id"] = rtb_id
+                traffic_data["rtb_id"] = rtb_data.get("id", "unknown")
                 traffic_data["rtb_imp"] = rtb_data.get("imp", [])
                 traffic_data["rtb_site"] = rtb_data.get("site", {})
                 traffic_data["rtb_device"] = rtb_data.get("device", {})
@@ -761,74 +584,15 @@ def generate_traffic_data(config: TrafficConfig) -> Dict[str, Any]:
                 traffic_data["rtb_auction_type"] = rtb_data.get("at", 2)
                 traffic_data["rtb_timeout"] = rtb_data.get("tmax", 120)
                 traffic_data["rtb_currency"] = rtb_data.get("cur", ["USD"])
-                
-                # Keep original rtb_data for backward compatibility
                 traffic_data["rtb_data"] = rtb_data
             else:
                 logger.warning("RTB data could not be generated, using empty object.")
                 traffic_data["rtb_data"] = {}
+
         return traffic_data
     except Exception as e:
         logger.error(f"Error generating traffic data: {str(e)}", exc_info=True)
         raise
-
-def generate_adid() -> str:
-    """Generate a random advertising ID"""
-    return f"{random.randint(10000000, 99999999)}-{random.randint(1000, 9999)}-{random.randint(1000, 9999)}-{random.randint(1000, 9999)}"
-
-def simulate_request(traffic_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Simulate making a request with the generated traffic data"""
-    try:
-        logger.debug(f"Simulating request for traffic data: {traffic_data}")
-        
-        # Validate traffic data
-        if not isinstance(traffic_data, dict):
-            raise ValueError("Invalid traffic data format")
-            
-        # Simulate network latency (50-500ms)
-        latency = random.uniform(0.05, 0.5)
-        logger.debug(f"Simulated network latency: {latency:.3f}s")
-        time.sleep(latency)
-        
-        # Simulate success rate (85% success)
-        success = random.random() < 0.85
-        logger.debug(f"Request success: {success}")
-        
-        # Error status codes
-        error_codes = [400, 403, 404, 500]
-        
-        # Add response data
-        response_data = {
-            "success": success,
-            "response_time": round(random.uniform(50, 500), 2),  # ms
-            "status_code": 200 if success else random.choice(error_codes),
-            "response_size": random.randint(500, 2000),  # bytes
-            "bid_id": f"bid-{random.randint(1000000, 9999999)}" if traffic_data.get('rtb_data') else None,
-            "win_price": round(random.uniform(0.1, 5.0), 2) if success and traffic_data.get('rtb_data') else None,
-            "currency": "USD" if success and traffic_data.get('rtb_data') else None,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        logger.debug(f"Generated response data: {response_data}")
-        
-        # Merge response data with traffic data
-        traffic_data.update(response_data)
-        logger.debug(f"Final traffic data with response: {traffic_data}")
-        
-        return traffic_data
-    except Exception as e:
-        logger.error(f"Error simulating request: {str(e)}", exc_info=True)
-        # Return error response
-        error_response = {
-            "success": False,
-            "error": str(e),
-            "status_code": 500,
-            "timestamp": datetime.utcnow().isoformat()
-        }
-        if isinstance(traffic_data, dict):
-            traffic_data.update(error_response)
-        else:
-            traffic_data = error_response
-        return traffic_data
 
 @bp.route("/generated/<campaign_id>", methods=['GET'])
 def get_campaign_traffic(campaign_id: str):
@@ -963,15 +727,18 @@ def monitor_campaign(campaign_id: str):
         if os.path.exists(campaign_file):
             try:
                 with open(campaign_file, 'r') as f:
-                    data = json.load(f)
-                    campaign_data.update({
-                        "total_requests": len(data),
-                        "successful_requests": sum(1 for req in data if req.get('success', False)),
-                        "last_request": data[-1] if data else None,
-                        "requests_per_minute": calculate_requests_per_minute(data),
-                        "success_rate": calculate_success_rate(data),
-                        "average_response_time": calculate_average_response_time(data)
-                    })
+                    raw = json.load(f)
+                # Normalise: file is always object format {id: entry, ...}
+                entries = list(raw.values()) if isinstance(raw, dict) else raw
+                last_entry = entries[-1] if entries else None
+                campaign_data.update({
+                    "total_requests": len(entries),
+                    "successful_requests": sum(1 for req in entries if req.get('success', False)),
+                    "last_request": last_entry,
+                    "requests_per_minute": calculate_requests_per_minute(entries),
+                    "success_rate": calculate_success_rate(entries),
+                    "average_response_time": calculate_average_response_time(entries)
+                })
             except Exception as e:
                 logger.error(f"[API] Error reading campaign file: {str(e)}", exc_info=True)
         
@@ -1025,13 +792,21 @@ def get_all_traffic():
     try:
         logger.info("Getting all generated traffic")
         all_traffic = []
-        
-        for filename in os.listdir(TRAFFIC_DATA_DIR):
-            if filename.endswith('.json') and not filename.endswith('_status.json'):
-                with open(os.path.join(TRAFFIC_DATA_DIR, filename), 'r') as f:
-                    traffic_data = json.load(f)
-                    all_traffic.extend(traffic_data)
-        
+
+        # Traffic files live in subdirectories: TRAFFIC_DATA_DIR/<campaign_id>/traffic.json
+        for campaign_dir in os.listdir(TRAFFIC_DATA_DIR):
+            traffic_file = os.path.join(TRAFFIC_DATA_DIR, campaign_dir, 'traffic.json')
+            if not os.path.isfile(traffic_file):
+                continue
+            try:
+                with open(traffic_file, 'r') as f:
+                    raw = json.load(f)
+                # Normalise object format {id: entry, ...} to a flat list
+                entries = list(raw.values()) if isinstance(raw, dict) else raw
+                all_traffic.extend(entries)
+            except Exception as e:
+                logger.warning(f"Skipping malformed traffic file {traffic_file}: {str(e)}")
+
         logger.debug(f"Retrieved {len(all_traffic)} total traffic entries")
         return jsonify({
             "success": True,
@@ -1312,28 +1087,30 @@ def update_campaign_status(campaign_id: str, status: str, additional_data: Dict[
             thread_locks[campaign_id] = lock
             
         with lock:
-            # Calculate statistics if file exists
+            # Use in-memory stats when the campaign thread is active (avoids O(n)
+            # file read on every iteration).  Fall back to file scan only when the
+            # campaign is no longer running (e.g. loading historical totals).
             total_requests = 0
             successful_requests = 0
-            if os.path.exists(campaign_file):
+            live_stats = campaign_stats.get(campaign_id)
+            if live_stats is not None:
+                total_requests = live_stats["total"]
+                successful_requests = live_stats["successful"]
+            elif os.path.exists(campaign_file):
                 try:
                     with open(campaign_file, 'r') as f:
                         traffic_data = json.load(f)
-                        
+
                         # Handle both old list format and new object format
                         if isinstance(traffic_data, list):
-                            # Old format - list of requests
                             total_requests = len(traffic_data)
                             successful_requests = sum(1 for entry in traffic_data if entry.get('success', False))
                         elif isinstance(traffic_data, dict):
-                            # New format - object with request IDs as keys
                             total_requests = len(traffic_data)
                             successful_requests = sum(1 for entry in traffic_data.values() if entry.get('success', False))
                         else:
                             logger.warning(f"Unknown traffic data format: {type(traffic_data)}")
-                            total_requests = 0
-                            successful_requests = 0
-                            
+
                 except Exception as e:
                     logger.error(f"Error reading campaign file: {str(e)}", exc_info=True)
             

@@ -1,14 +1,7 @@
-// Log the API URL being used
-console.log('Using API URL:', import.meta.env.VITE_API_URL);
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 const handleResponse = async (response) => {
   const data = await response.json();
-  console.log('API Response:', {
-    status: response.status,
-    data: data
-  });
 
   if (!response.ok) {
     throw new Error(data.error || 'Request failed');
@@ -26,12 +19,7 @@ const backendClient = {
   // Traffic Endpoints
   traffic: {
     generate: async (config) => {
-      console.log('About to start traffic generation');
       try {
-        await backendClient.traffic.appendCampaignLog(
-          config.campaign_id,
-          { message: 'About to start traffic generation with config: ' + JSON.stringify(config), level: 'info' }
-        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/generate`, {
           method: 'POST',
           headers: defaultHeaders,
@@ -39,8 +27,7 @@ const backendClient = {
           body: JSON.stringify(config),
         });
         const data = await response.json();
-        
-        // Handle both success and error cases
+
         if (!response.ok) {
           return {
             success: false,
@@ -48,7 +35,7 @@ const backendClient = {
             status: data.status
           };
         }
-        
+
         return {
           success: true,
           ...data
@@ -63,10 +50,6 @@ const backendClient = {
     },
     stop: async (campaignId) => {
       try {
-        await backendClient.traffic.appendCampaignLog(
-          campaignId,
-          { message: 'About to stop traffic generation for campaign: ' + campaignId, level: 'info' }
-        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/stop/${campaignId}`, {
           method: 'POST',
           headers: defaultHeaders,
@@ -80,10 +63,6 @@ const backendClient = {
     },
     monitor: async (campaignId) => {
       try {
-        await backendClient.traffic.appendCampaignLog(
-          campaignId,
-          { message: 'About to get monitoring data for campaign: ' + campaignId, level: 'info' }
-        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/monitor/${campaignId}`, {
           headers: defaultHeaders,
           credentials: "include",
@@ -95,12 +74,7 @@ const backendClient = {
       }
     },
     getStatus: async (campaignId) => {
-      console.log('About to get status for campaign: ' + campaignId);
       try {
-        await backendClient.traffic.appendCampaignLog(
-          campaignId,
-          { message: 'About to get status for campaign: ' + campaignId, level: 'info' }
-        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/status/${campaignId}`, {
           headers: defaultHeaders,
           credentials: "include",
@@ -113,13 +87,9 @@ const backendClient = {
     },
     getGenerated: async (campaignId = null) => {
       try {
-        const url = campaignId 
+        const url = campaignId
           ? `${API_BASE_URL}/api/traffic/generated/${campaignId}`
           : `${API_BASE_URL}/api/traffic/generated`;
-        await backendClient.traffic.appendCampaignLog(
-          campaignId || 'all',
-          { message: 'About to fetch generated traffic: ' + url, level: 'info' }
-        );
         const response = await fetch(url, {
           headers: defaultHeaders,
           credentials: "include",
@@ -131,12 +101,7 @@ const backendClient = {
       }
     },
     getStats: async (campaignId) => {
-      console.log('About to get stats for campaign: ' + campaignId);
       try {
-        await backendClient.traffic.appendCampaignLog(
-          campaignId,
-          { message: 'About to get stats for campaign: ' + campaignId, level: 'info' }
-        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/stats/${campaignId}`, {
           headers: defaultHeaders,
           credentials: "include",
@@ -149,10 +114,6 @@ const backendClient = {
     },
     checkHealth: async () => {
       try {
-        await backendClient.traffic.appendCampaignLog(
-          'system',
-          { message: 'About to check backend health', level: 'info' }
-        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/health`, {
           headers: defaultHeaders,
           credentials: "include",
@@ -163,13 +124,8 @@ const backendClient = {
         throw error;
       }
     },
-    // NEW: Campaign management endpoints
     getCampaignInfo: async (campaignId) => {
       try {
-        await backendClient.traffic.appendCampaignLog(
-          campaignId,
-          { message: 'About to get campaign info: ' + campaignId, level: 'info' }
-        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/campaigns/${campaignId}/info`, {
           headers: defaultHeaders,
           credentials: "include",
@@ -182,10 +138,6 @@ const backendClient = {
     },
     updateCampaignStatus: async (campaignId, status) => {
       try {
-        await backendClient.traffic.appendCampaignLog(
-          campaignId,
-          { message: 'About to update campaign status: ' + campaignId + ' to ' + status, level: 'info' }
-        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/campaigns/${campaignId}/status`, {
           method: 'PUT',
           headers: defaultHeaders,
@@ -200,10 +152,6 @@ const backendClient = {
     },
     cleanupCampaign: async (campaignId) => {
       try {
-        await backendClient.traffic.appendCampaignLog(
-          campaignId,
-          { message: 'About to cleanup campaign: ' + campaignId, level: 'info' }
-        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/cleanup/${campaignId}`, {
           method: 'POST',
           headers: defaultHeaders,
@@ -217,10 +165,6 @@ const backendClient = {
     },
     downloadTraffic: async (campaignId) => {
       try {
-        await backendClient.traffic.appendCampaignLog(
-          campaignId,
-          { message: 'About to download traffic for campaign: ' + campaignId, level: 'info' }
-        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/download/${campaignId}`, {
           headers: defaultHeaders,
           credentials: "include",
@@ -233,7 +177,6 @@ const backendClient = {
     },
     testTrafficFunctions: async (testType, testData = {}) => {
       try {
-        console.log('Testing traffic functions:', testType);
         const response = await fetch(`${API_BASE_URL}/api/traffic/test`, {
           method: 'POST',
           headers: defaultHeaders,
@@ -248,14 +191,13 @@ const backendClient = {
     },
     generateSample: async (formData) => {
       try {
-        console.log('Generating sample traffic data:', formData);
         const response = await fetch(`${API_BASE_URL}/api/traffic/test`, {
           method: 'POST',
           headers: defaultHeaders,
           credentials: "include",
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             test_type: "generate_traffic_data",
-            config: formData 
+            config: formData
           }),
         });
         return await handleResponse(response);
@@ -274,17 +216,11 @@ const backendClient = {
         });
         return await handleResponse(response);
       } catch (error) {
-        // Optionally log to console or ignore
-        // console.error("Error appending campaign log:", error);
         return { success: false, error: error.message };
       }
     },
     resumeTraffic: async (campaignId) => {
       try {
-        await backendClient.traffic.appendCampaignLog(
-          campaignId,
-          { message: 'About to resume traffic for campaign: ' + campaignId, level: 'info' }
-        );
         const response = await fetch(`${API_BASE_URL}/api/traffic/resume/${campaignId}`, {
           method: 'POST',
           headers: defaultHeaders,
@@ -301,7 +237,6 @@ const backendClient = {
   // Session Endpoints
   sessions: {
     list: async () => {
-      console.log('Fetching all sessions');
       try {
         const response = await fetch(`${API_BASE_URL}/api/sessions/`, {
           headers: defaultHeaders,
@@ -310,11 +245,10 @@ const backendClient = {
         return handleResponse(response);
       } catch (error) {
         console.error('Failed to fetch sessions:', error);
-        return []; // Return empty array instead of throwing
+        return [];
       }
     },
     get: async (sessionId) => {
-      console.log('Fetching session:', sessionId);
       const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}`, {
         headers: defaultHeaders,
         credentials: "include",
@@ -322,7 +256,6 @@ const backendClient = {
       return handleResponse(response);
     },
     create: async (sessionData) => {
-      console.log('Creating session:', sessionData);
       const response = await fetch(`${API_BASE_URL}/api/sessions/`, {
         method: "POST",
         headers: defaultHeaders,
@@ -332,7 +265,6 @@ const backendClient = {
       return handleResponse(response);
     },
     update: async (sessionId, updateData) => {
-      console.log('Updating session:', sessionId, updateData);
       const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}`, {
         method: "PUT",
         headers: defaultHeaders,
@@ -342,7 +274,6 @@ const backendClient = {
       return handleResponse(response);
     },
     delete: async (sessionId) => {
-      console.log('Deleting session:', sessionId);
       const response = await fetch(`${API_BASE_URL}/api/sessions/${sessionId}`, {
         method: "DELETE",
         headers: defaultHeaders,
@@ -355,7 +286,6 @@ const backendClient = {
   // Profile Endpoints
   profiles: {
     list: async () => {
-      console.log('Fetching all profiles');
       try {
         const response = await fetch(`${API_BASE_URL}/api/profiles/`, {
           headers: defaultHeaders,
@@ -364,11 +294,10 @@ const backendClient = {
         return handleResponse(response);
       } catch (error) {
         console.error('Failed to fetch profiles:', error);
-        return []; // Return empty array instead of throwing
+        return [];
       }
     },
     get: async (profileId) => {
-      console.log('Fetching profile:', profileId);
       const response = await fetch(`${API_BASE_URL}/api/profiles/${profileId}`, {
         headers: defaultHeaders,
         credentials: "include",
@@ -376,7 +305,6 @@ const backendClient = {
       return handleResponse(response);
     },
     create: async (profileData) => {
-      console.log('Creating profile:', profileData);
       const response = await fetch(`${API_BASE_URL}/api/profiles/`, {
         method: "POST",
         headers: defaultHeaders,
@@ -386,7 +314,6 @@ const backendClient = {
       return handleResponse(response);
     },
     update: async (profileId, updateData) => {
-      console.log('Updating profile:', profileId, updateData);
       const response = await fetch(`${API_BASE_URL}/api/profiles/${profileId}`, {
         method: "PUT",
         headers: defaultHeaders,
@@ -396,7 +323,6 @@ const backendClient = {
       return handleResponse(response);
     },
     delete: async (profileId) => {
-      console.log('Deleting profile:', profileId);
       const response = await fetch(`${API_BASE_URL}/api/profiles/${profileId}`, {
         method: "DELETE",
         headers: defaultHeaders,
@@ -408,15 +334,12 @@ const backendClient = {
 
   // Connection check endpoint
   checkConnection: async () => {
-    console.log('Checking connection to backend...');
     try {
       const response = await fetch(`${API_BASE_URL}/api/health`, {
         headers: defaultHeaders,
         credentials: "include",
       });
-      const data = await handleResponse(response);
-      console.log("Connection check response:", data);
-      return data;
+      return await handleResponse(response);
     } catch (error) {
       console.error('Connection check failed:', error);
       throw new Error(`Failed to connect to backend: ${error.message}`);
@@ -424,4 +347,4 @@ const backendClient = {
   },
 };
 
-export default backendClient; 
+export default backendClient;

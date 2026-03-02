@@ -19,9 +19,18 @@ DEFAULT_REFERRERS = [f"https://defaultreferrer.com/page/{i}" for i in range(1, 5
 
 # Set your OpenAI API key in the environment
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-3.5-turbo")
+
+# Allowlist of safe characters for interpolated values
+_SAFE_PATTERN = re.compile(r"[^a-zA-Z0-9 &\-_.,']")
+
+def _sanitize(value: str) -> str:
+    """Strip characters outside a safe allowlist to prevent prompt injection."""
+    return _SAFE_PATTERN.sub("", str(value))[:100]
 
 PROMPT_TEMPLATE = (
-    "Give me a list of 4 realistic, diverse URLs of popular websites or articles that can be used as referres to traffic of pepole that  intresets are {interest} in {country}. "
+    "Give me a list of 4 realistic, diverse URLs of popular websites or articles that can be used as referrers "
+    "for traffic of people whose interests are {interest} in {country}. "
     "Only return the URLs as a plain list, one per line, no extra text."
 )
 
@@ -40,18 +49,20 @@ def extract_urls(text: str) -> list[str]:
     return re.findall(url_pattern, text)
 
 def get_referrers(interest: str, country: str) -> List[str]:
-    logger.info(f"Requesting LLM referrers for interest='{interest}', country='{country}'")
+    safe_interest = _sanitize(interest)
+    safe_country = _sanitize(country)
+    logger.info(f"Requesting LLM referrers for interest='{safe_interest}', country='{safe_country}'")
     if not OPENAI_API_KEY:
         logger.error("OPENAI_API_KEY not set. Returning default referrers.")
         return DEFAULT_REFERRERS
-    prompt = PROMPT_TEMPLATE.format(interest=interest, country=country)
+    prompt = PROMPT_TEMPLATE.format(interest=safe_interest, country=safe_country)
     token_estimate = estimate_token_count(prompt)
     logger.info(f"Estimated token count for prompt: {token_estimate} (1 token ≈ 4 characters)")
     try:
         logger.info(f"Sending prompt to OpenAI: {prompt}")
         client = openai.OpenAI(api_key=OPENAI_API_KEY)
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=OPENAI_MODEL,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=2000,
             temperature=0.9,

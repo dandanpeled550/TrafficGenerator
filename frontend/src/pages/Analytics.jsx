@@ -28,8 +28,15 @@ import {
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'];
 
+// Return the cutoff Date for the selected time range
+function getCutoffDate(timeRange) {
+  const now = new Date();
+  const days = { "1d": 1, "7d": 7, "30d": 30, "90d": 90 }[timeRange] ?? 7;
+  return new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+}
+
 export default function Analytics() {
-  const [sessions, setSessions] = useState([]);
+  const [allSessions, setAllSessions] = useState([]);
   const [timeRange, setTimeRange] = useState("7d");
   const [isLoading, setIsLoading] = useState(true);
 
@@ -41,15 +48,19 @@ export default function Analytics() {
     setIsLoading(true);
     try {
       const data = await backendClient.sessions.list();
-      setSessions(data);
+      setAllSessions(data);
     } catch (error) {
       console.error("Failed to load sessions for analytics:", error);
-      setSessions([]);
+      setAllSessions([]);
     }
     setIsLoading(false);
   };
 
-  // generateChartData function is removed as the PieChart for traffic distribution is no longer used.
+  // Filter sessions to only those created within the selected time range
+  const sessions = allSessions.filter(s => {
+    if (!s.created_at) return false;
+    return new Date(s.created_at) >= getCutoffDate(timeRange);
+  });
 
   const generatePerformanceData = () => {
     return sessions.slice(0, 7).map((session) => ({
@@ -61,24 +72,57 @@ export default function Analytics() {
   };
 
   const generateTimelineData = () => {
+    const days = { "1d": 1, "7d": 7, "30d": 30, "90d": 90 }[timeRange] ?? 7;
+    const buckets = Math.min(days, 30); // cap at 30 data points for readability
     const timeline = [];
     const now = new Date();
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-      const dayRequests = sessions
-        .filter(s => s.created_at && new Date(s.created_at).toDateString() === date.toDateString())
+    const bucketMs = (days * 24 * 60 * 60 * 1000) / buckets;
+
+    for (let i = buckets - 1; i >= 0; i--) {
+      const bucketEnd = new Date(now.getTime() - i * bucketMs);
+      const bucketStart = new Date(bucketEnd.getTime() - bucketMs);
+      const bucketRequests = allSessions
+        .filter(s => {
+          if (!s.created_at) return false;
+          const d = new Date(s.created_at);
+          return d >= bucketStart && d < bucketEnd;
+        })
         .reduce((sum, s) => sum + (s.total_requests || 0), 0);
-      
+
       timeline.push({
-        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-        requests: dayRequests
+        date: bucketEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        requests: bucketRequests
       });
     }
     return timeline;
   };
 
+  const handleExport = () => {
+    if (sessions.length === 0) return;
+    const headers = ['Name', 'Status', 'Created At', 'Target URL', 'Total Requests', 'Successful Requests', 'Success Rate (%)', 'Requests/min', 'Duration (min)'];
+    const rows = sessions.map(s => [
+      s.name ?? '',
+      s.status ?? '',
+      s.created_at ?? '',
+      s.target_url ?? '',
+      s.total_requests ?? 0,
+      s.successful_requests ?? 0,
+      s.total_requests > 0 ? ((s.successful_requests / s.total_requests) * 100).toFixed(1) : '0.0',
+      s.requests_per_minute ?? 0,
+      s.duration_minutes ?? 0,
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `analytics-${timeRange}-${new Date().toISOString().slice(0,10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   const totalRequests = sessions.reduce((sum, s) => sum + (s.total_requests || 0), 0);
-  const avgSuccessRate = sessions.length > 0 
+  const avgSuccessRate = sessions.length > 0
     ? sessions.reduce((sum, s) => sum + ((s.successful_requests || 0) / (s.total_requests || 1) * 100), 0) / sessions.length
     : 0;
 
@@ -107,9 +151,14 @@ export default function Analytics() {
                 <SelectItem value="90d">Last 90 days</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline" className="border-slate-700 hover:bg-slate-800">
+            <Button
+              variant="outline"
+              className="border-slate-700 hover:bg-slate-800"
+              onClick={handleExport}
+              disabled={sessions.length === 0}
+            >
               <Download className="w-4 h-4 mr-2" />
-              Export
+              Export CSV
             </Button>
           </div>
         </motion.div>

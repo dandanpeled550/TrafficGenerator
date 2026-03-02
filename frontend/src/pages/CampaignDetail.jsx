@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import backendClient from "@/api/backendClient";
+import { useMonitor } from "@/hooks/useMonitor";
+import { getStatusColor } from "@/utils/statusHelpers";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -160,6 +162,23 @@ export default function CampaignDetail() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [stats, setStats] = useState({});
   const [isDownloading, setIsDownloading] = useState(false);
+  const [requestPage, setRequestPage] = useState(1);
+  const REQUESTS_PER_PAGE = 50;
+
+  // Live monitoring — polls the monitor endpoint while the campaign is running
+  const { monitorData, isMonitoring } = useMonitor(campaignId, campaign?.status === 'running');
+
+  // Merge live monitor data into the displayed stats so numbers update in real-time
+  const liveStats = monitorData
+    ? {
+        ...stats,
+        total_requests: monitorData.total_requests ?? stats.total_requests,
+        successful_requests: monitorData.successful_requests ?? stats.successful_requests,
+        requests_per_minute: monitorData.requests_per_minute ?? stats.requests_per_minute,
+        success_rate: monitorData.success_rate ?? stats.success_rate,
+        average_response_time: monitorData.average_response_time ?? stats.average_response_time,
+      }
+    : stats;
 
   useEffect(() => {
     loadCampaignData();
@@ -287,23 +306,6 @@ export default function CampaignDetail() {
     setIsDownloading(false);
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'running':
-        return 'bg-green-500/20 text-green-400 border-green-500/30';
-      case 'paused':
-        return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-      case 'completed':
-        return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-      case 'stopped':
-        return 'bg-red-500/20 text-red-400 border-red-500/30';
-      case 'draft':
-        return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
-      default:
-        return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
-    }
-  };
-
   const extractUniqueData = () => {
     const uniqueAdids = new Set();
     const uniqueBanners = new Set();
@@ -397,8 +399,9 @@ export default function CampaignDetail() {
   }
 
   const uniqueData = extractUniqueData();
-  const totalRequests = campaign.total_requests || 0;
-  const successfulRequests = campaign.successful_requests || 0;
+  // When the campaign is running, prefer live monitor stats over stale session data
+  const totalRequests = liveStats.total_requests ?? campaign.total_requests ?? 0;
+  const successfulRequests = liveStats.successful_requests ?? campaign.successful_requests ?? 0;
   const successRate = totalRequests > 0 ? (successfulRequests / totalRequests) * 100 : 0;
 
   return (
@@ -424,6 +427,12 @@ export default function CampaignDetail() {
                 </Badge>
                 {campaign.status === 'running' && (
                   <span className="px-2 py-0.5 bg-green-600/20 text-green-400 text-xs rounded-full animate-pulse">Live</span>
+                )}
+                {isMonitoring && (
+                  <span className="px-2 py-0.5 bg-blue-600/20 text-blue-400 text-xs rounded-full flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+                    Monitoring
+                  </span>
                 )}
                 <span className="text-slate-400 text-sm">
                   Created {formatDistanceToNow(new Date(campaign.created_at), { addSuffix: true })}
@@ -757,17 +766,53 @@ export default function CampaignDetail() {
             <TabsContent value="requests" className="mt-6">
               <Card className="bg-slate-900/50 border-slate-800">
                 <CardHeader>
-                  <CardTitle className="text-white">Individual Requests ({trafficData.length})</CardTitle>
+                  <CardTitle className="text-white">
+                    Individual Requests ({trafficData.length})
+                    {trafficData.length > REQUESTS_PER_PAGE && (
+                      <span className="text-slate-400 text-sm font-normal ml-2">
+                        — page {requestPage} of {Math.ceil(trafficData.length / REQUESTS_PER_PAGE)}
+                      </span>
+                    )}
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
                   {trafficData.length === 0 ? (
                     <p className="text-slate-400">No traffic requests found for this campaign</p>
                   ) : (
-                    <div className="space-y-4">
-                      {trafficData.map((request, index) => (
-                        <RequestCard key={request.request_key || request.id || index} request={request} />
-                      ))}
-                    </div>
+                    <>
+                      <div className="space-y-4">
+                        {trafficData
+                          .slice((requestPage - 1) * REQUESTS_PER_PAGE, requestPage * REQUESTS_PER_PAGE)
+                          .map((request, index) => (
+                            <RequestCard key={request.request_key || request.id || index} request={request} />
+                          ))}
+                      </div>
+                      {trafficData.length > REQUESTS_PER_PAGE && (
+                        <div className="flex items-center justify-center gap-2 mt-6">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setRequestPage(p => Math.max(1, p - 1))}
+                            disabled={requestPage === 1}
+                            className="border-slate-700 hover:bg-slate-800"
+                          >
+                            Previous
+                          </Button>
+                          <span className="text-slate-400 text-sm px-2">
+                            {requestPage} / {Math.ceil(trafficData.length / REQUESTS_PER_PAGE)}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setRequestPage(p => Math.min(Math.ceil(trafficData.length / REQUESTS_PER_PAGE), p + 1))}
+                            disabled={requestPage === Math.ceil(trafficData.length / REQUESTS_PER_PAGE)}
+                            className="border-slate-700 hover:bg-slate-800"
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      )}
+                    </>
                   )}
                 </CardContent>
               </Card>

@@ -62,16 +62,12 @@ def catch_all(path):
 
 @app.before_request
 def log_request_info():
-    logger.info('Headers: %s', request.headers)
-    logger.info('Body: %s', request.get_data())
+    # Log method and path only — never log bodies (may contain sensitive data)
+    logger.info('%s %s', request.method, request.path)
 
 @app.after_request
 def log_response_info(response):
-    # Only log response data if not in direct passthrough mode (e.g., send_file)
-    if not getattr(response, 'direct_passthrough', False):
-        logger.info('Response: %s', response.get_data())
-    else:
-        logger.info('Response: <direct passthrough file or stream>')
+    logger.info('%s %s → %s', request.method, request.path, response.status_code)
     return response
 
 @app.route("/")

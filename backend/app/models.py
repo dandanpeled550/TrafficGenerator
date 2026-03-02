@@ -97,7 +97,8 @@ class UserProfileCreate(UserProfile):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
-class UserProfileUpdate(BaseModel):
+@dataclass
+class UserProfileUpdate:
     name: Optional[str] = None
     description: Optional[str] = None
     demographics: Optional[Demographics] = None
@@ -106,4 +107,4 @@ class UserProfileUpdate(BaseModel):
     rtb_specifics: Optional[RtbSpecifics] = None
     behavioral_patterns: Optional[BehavioralPatterns] = None
     location_data: Optional[LocationData] = None
-    updated_at: Optional[datetime] = None 
+    updated_at: Optional[datetime] = None
